@@ -100,17 +100,8 @@ def register_routes(app) -> bool:
         resp.headers["Accept-Ranges"] = "bytes"
         return resp
 
-    async def _head(request):
-        rec = resolve(request.match_info.get("token", ""))
-        if not rec:
-            return web.Response(status=404, text="لینک منقضی شده یا وجود ندارد.")
-        return web.Response(status=200, headers={
-            "Content-Length": str(rec.get("size") or 0),
-            "Accept-Ranges": "bytes",
-            "Content-Disposition": 'attachment; filename="%s"'
-                                   % urllib.parse.quote(rec.get("name") or "file")})
-
     for path in ("/d/{token}", "/d/{token}/{name}"):
-        app.router.add_get(path, _download)
-        app.router.add_head(path, _head)
+        # add_get خودش HEAD را هم ثبت می‌کند (allow_head=True) — ثبتِ دوبارهٔ HEAD را
+        # aiohttp با خطا رد می‌کند و آن‌وقت بعضی روت‌ها ثبت نمی‌شوند.
+        app.router.add_get(path, _download, allow_head=True)
     return True
