@@ -71,6 +71,11 @@ app = Client(**_client_kwargs)
 # Set global app instance BEFORE importing handlers
 set_app(app)
 
+# فایل → لینکِ مستقیم: این ماژول باید *قبل از* بقیهٔ هندلرها ایمپورت شود تا
+# هندلرِ پیام‌های چندرسانه‌ای زودتر از همه ثبت شود (pyrogram بعد از اولین هندلرِ
+# منطبق می‌ایستد؛ پس ترتیبِ ایمپورت = ترتیبِ اولویت).
+from COMMANDS.filelink_cmd import *
+
 # Кэш для username бота (будет заполнен после старта)
 _bot_username_cache = None
 

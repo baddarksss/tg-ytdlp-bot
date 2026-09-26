@@ -74,6 +74,21 @@ def vfull_callback(app, cq):
     return True
 
 
+@app.on_callback_query(filters.regex(r"^vess$"))
+def vess_callback(app, cq):
+    """بکاپِ ضروری: فقط متغیرهای لازم + کانال‌هایی که ربات ادمینِ آن‌هاست."""
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    cq.answer("⏳ در حال آماده‌سازی...")
+    text, env_file, n_drop, _dropped = vs.essential(app)
+    _send_file(uid, env_file, "railway-essential.env",
+               "📌 بکاپِ ضروری (فقط لازم‌ها)")
+    vs.send_text(app, uid, text)
+    return True
+
+
 @app.on_callback_query(filters.regex(r"^vbackup$"))
 def vbackup_callback(app, cq):
     if not _is_admin(cq.from_user.id):

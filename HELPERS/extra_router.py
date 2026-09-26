@@ -43,4 +43,12 @@ def route_extra_text(app, message) -> bool:
     except Exception as e:
         logger.error(f"extra_router: vars routing failed: {e}")
 
+    # ۳) فایل → لینک: /links و دکمهٔ «🔗 لینکِ فایل»
+    try:
+        from COMMANDS.filelink_cmd import handle_filelink_text
+        if handle_filelink_text(app, message):
+            return True
+    except Exception as e:
+        logger.error(f"extra_router: filelink routing failed: {e}")
+
     return False

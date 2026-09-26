@@ -327,7 +327,8 @@ def panel(app, copied=None) -> tuple:
                  InlineKeyboardButton("🔄 بررسیِ ادمین‌بودن", callback_data="chrefresh")])
     rows.append([InlineKeyboardButton("💾 بکاپِ کانال‌ها", callback_data="chbackup"),
                  InlineKeyboardButton("☁️ ذخیره در Variables", callback_data="chcloudsync")])
-    rows.append([InlineKeyboardButton("🧩 متغیرها (بکاپِ کل)", callback_data="vmenu")])
+    rows.append([InlineKeyboardButton("📌 بکاپِ ضروری", callback_data="vess"),
+                 InlineKeyboardButton("🧩 متغیرها (بکاپِ کل)", callback_data="vmenu")])
     return "\n".join(lines), _kb(rows)
 
 
@@ -418,3 +419,27 @@ def railway_sync() -> tuple:
 
 def autosync_enabled() -> bool:
     return bool(getattr(Config, "CHANNEL_AUTOSYNC", False))
+
+
+def admin_keys(app=None, keys=None) -> list:
+    """کانال‌هایی که ربات در آن‌ها **ادمین** است (بررسیِ زنده، با کشِ ۱۰ دقیقه).
+
+    برای «بکاپِ ضروری» استفاده می‌شود: فقط کانال‌هایی که واقعاً می‌شود در آن‌ها
+    پست گذاشت، نه هر چیزی که در فهرست مانده.
+    """
+    if app is None:
+        try:
+            from HELPERS.app_instance import get_app
+            app = get_app()
+        except Exception:
+            app = None
+    out = []
+    for k in (keys or desired_keys()):
+        ok = False
+        if app is not None:
+            ok, _title, _err = bot_can_post(app, k)
+        else:
+            ok = bool(get(k).get("title"))
+        if ok:
+            out.append(k)
+    return out

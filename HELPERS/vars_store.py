@@ -167,6 +167,7 @@ def panel(show_full: bool = False) -> tuple:
     vars_, source, warn = variables()
     text = list_text(vars_, source, show_full, warn)
     rows = [
+        [InlineKeyboardButton("📌 بکاپِ ضروری (برای ران‌شدن)", callback_data="vess")],
         [InlineKeyboardButton("📤 بکاپِ کلِ متغیرها (فایل)", callback_data="vbackup"),
          InlineKeyboardButton("🔓 نمایشِ کامل" if not show_full else "🔒 حالتِ پوشیده",
                               callback_data="vfull")],
@@ -245,6 +246,69 @@ def delete_variable(name: str) -> tuple:
         logger.info(f"vars_store: deleted {name}")
         return True, "حذف شد ✅ (ریلوی سرویس را یک بار ری‌استارت می‌کند)"
     return False, "ریلوی قبول نکرد"
+
+
+# ─────────────────────────── بکاپِ ضروری ───────────────────────────
+
+# فقط چیزهایی که برای بالا آمدن و کارکردنِ ربات لازم است (+ کانال‌ها)
+ESSENTIAL = ["BOT_TOKEN", "API_ID", "API_HASH", "ADMIN", "COPY_CHANNEL_ID"]
+ESSENTIAL_TITLES = {
+    "BOT_TOKEN": "توکنِ ربات (از @BotFather)",
+    "API_ID": "api_id از my.telegram.org",
+    "API_HASH": "api_hash از my.telegram.org",
+    "ADMIN": "آیدیِ عددیِ مالک",
+    "COPY_CHANNEL_ID": "کانال‌هایی که ربات ادمین است",
+}
+
+
+def essential(app=None) -> tuple:
+    """(متنِ آمادهٔ پیست, فایلِ .env, شمارِ حذف‌شده‌ها, فهرستِ حذف‌شده‌ها)"""
+    vars_, _source, _warn = variables()
+    keep, dropped = {}, []
+    for name in sorted(vars_):
+        if name in ESSENTIAL or name.startswith("RAILWAY_"):
+            continue
+        dropped.append(name)
+
+    for name in ESSENTIAL:
+        if name == "COPY_CHANNEL_ID":
+            from HELPERS import channel_store as cs
+            keys = cs.admin_keys(app)
+            if keys:
+                keep[name] = ",".join(keys)
+            continue
+        val = vars_.get(name)
+        if val:
+            keep[name] = val
+
+    lines = ["# بکاپِ ضروریِ ربات — فقط چیزهایی که برای ران‌شدن لازم است", ""]
+    for name in ESSENTIAL:
+        if name in keep:
+            lines.append("%s=%s" % (name, keep[name]))
+    env_file = "\n".join(lines) + "\n"
+
+    msg = ["📌 <b>بکاپِ ضروری</b>",
+           "این خط‌ها را در Railway → Variables → <b>RAW Editor</b> پیست کن و دیپلوی بزن:",
+           "",
+           "<pre>"]
+    for name in ESSENTIAL:
+        if name in keep:
+            val = keep[name]
+            shown = val if len(val) <= 48 else val[:6] + "…" + val[-4:]
+            msg.append("%s=%s" % (name, shown))
+    msg += ["</pre>", ""]
+    for name in ESSENTIAL:
+        msg.append("• <b>%s</b> — %s" % (name, ESSENTIAL_TITLES.get(name, "")))
+    if "COPY_CHANNEL_ID" not in keep:
+        msg += ["", "⚠️ کانالی که ربات در آن ادمین باشد پیدا نشد ⇒ خطِ "
+                    "<code>COPY_CHANNEL_ID</code> خالی است."]
+    msg += ["",
+            "🧹 متغیرهای غیرضروری حذف شدند (<b>%d</b> تا): %s"
+            % (len(dropped), ", ".join(dropped[:12]) + ("…" if len(dropped) > 12 else "")),
+            "",
+            "ℹ️ آیدی‌های <code>RAILWAY_*</code> را خودِ ریلوی خودکار می‌گذارد؛ "
+            "لازم نیست دستی بگذاری."]
+    return "\n".join(msg), env_file, len(dropped), dropped
 
 
 # ─────────────────────────── گفتگو (مسیریابیِ متن) ───────────────────────────

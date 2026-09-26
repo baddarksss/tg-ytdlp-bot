@@ -94,6 +94,9 @@ class Config(_Base):
     RAILWAY_PROJECT_ID = ev.opt("RAILWAY_PROJECT_ID", "")
     RAILWAY_ENVIRONMENT_ID = ev.opt("RAILWAY_ENVIRONMENT_ID", "")
     RAILWAY_SERVICE_ID = ev.opt("RAILWAY_SERVICE_ID", "")
+    # لینکِ مستقیمِ فایل: دامنهٔ عمومی (خالی = خودکار از Railway خوانده می‌شود) و پورتِ وب‌سرور
+    LINK_BASE_URL = ev.opt("LINK_BASE_URL", "")
+    LINK_PORT = ev.i("LINK_PORT", 0)
     # True = هر بار کانالی اضافه/حذف شد، خودش در COPY_CHANNEL_ID بنویسد
     CHANNEL_AUTOSYNC = ev.b("CHANNEL_AUTOSYNC", False)
     SUBSCRIBE_CHANNEL_URL = ev.opt("SUBSCRIBE_CHANNEL_URL", _Base.SUBSCRIBE_CHANNEL_URL)
