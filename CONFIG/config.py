@@ -90,6 +90,10 @@ class Config(_Base):
     COPY_CHANNEL_ASK = ev.b("COPY_CHANNEL_ASK", True)
     # توکنِ API ریلوی (اختیاری) — برای دکمهٔ «ذخیره در Variables» و همگام‌سازی خودکار
     RAILWAY_API_TOKEN = ev.opt("RAILWAY_API_TOKEN", "")
+    # آیدی‌های پروژه/محیط/سرویس — Railway خودش داخلِ محیط می‌گذارد
+    RAILWAY_PROJECT_ID = ev.opt("RAILWAY_PROJECT_ID", "")
+    RAILWAY_ENVIRONMENT_ID = ev.opt("RAILWAY_ENVIRONMENT_ID", "")
+    RAILWAY_SERVICE_ID = ev.opt("RAILWAY_SERVICE_ID", "")
     # True = هر بار کانالی اضافه/حذف شد، خودش در COPY_CHANNEL_ID بنویسد
     CHANNEL_AUTOSYNC = ev.b("CHANNEL_AUTOSYNC", False)
     SUBSCRIBE_CHANNEL_URL = ev.opt("SUBSCRIBE_CHANNEL_URL", _Base.SUBSCRIBE_CHANNEL_URL)

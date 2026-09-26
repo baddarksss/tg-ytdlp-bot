@@ -317,14 +317,17 @@ def panel(app, copied=None) -> tuple:
     lines.append("ℹ️ کانال‌هایی که با 🔒 مشخص‌اند از متغیرِ محیطی <code>COPY_CHANNEL_ID</code> "
                  "می‌آیند و فقط از Railway → Variables قابلِ حذف‌اند.")
     lines.append("")
-    lines.append("💾 <b>بکاپ</b> = خطِ آمادهٔ <code>COPY_CHANNEL_ID</code> برای کپی در "
+    lines.append("💾 <b>بکاپِ کانال‌ها</b> = خطِ آمادهٔ <code>COPY_CHANNEL_ID</code> برای کپی در "
                  "Railway → Variables (تا در ریلویِ بعدی دستی اضافه نکنی).")
+    lines.append("🧩 <b>متغیرها</b> = فهرست/بکاپِ <u>کلِ</u> متغیرهای ربات + ویرایش و حذف "
+                 "از همین‌جا.")
     lines.append("☁️ <b>ذخیره در Variables</b> = خودِ ربات مقدار را از API ریلوی می‌نویسد "
                  "(سرویس یک بار ری‌استارت می‌شود).")
     rows.append([InlineKeyboardButton("➕ افزودن کانال", callback_data="chadd"),
                  InlineKeyboardButton("🔄 بررسیِ ادمین‌بودن", callback_data="chrefresh")])
     rows.append([InlineKeyboardButton("💾 بکاپِ کانال‌ها", callback_data="chbackup"),
                  InlineKeyboardButton("☁️ ذخیره در Variables", callback_data="chcloudsync")])
+    rows.append([InlineKeyboardButton("🧩 متغیرها (بکاپِ کل)", callback_data="vmenu")])
     return "\n".join(lines), _kb(rows)
 
 

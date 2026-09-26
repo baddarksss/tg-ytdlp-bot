@@ -40,20 +40,26 @@ def get_main_reply_keyboard(mode="2x3"):
     """Function for permanent reply-keyboard"""
     from pyrogram.types import ReplyKeyboardMarkup
     
+    # دکمه‌های «کانال‌ها» و «متغیرها»: در هر دو حالتِ کیبورد می‌آیند تا برای باز
+    # کردنِ پنل‌ها لازم نباشد دستور تایپ کنی (متنشان از HELPERS/extra_router می‌رود).
+    extra_row = ["📢 کانال‌ها", "🧩 متغیرها"]
     if mode == "1x3":
         keyboard = [
-            ["/clean", "/cookie", "/settings"]
+            ["/clean", "/cookie", "/settings"],
+            extra_row
         ]
     elif mode == "FULL":
         keyboard = [
             [messages.CLEAN_EMOJI, messages.COOKIE_EMOJI, messages.SETTINGS_EMOJI, messages.PROXY_EMOJI, messages.IMAGE_EMOJI, messages.SEARCH_EMOJI, messages.ARGS_EMOJI],
             [messages.VIDEO_EMOJI, messages.USAGE_EMOJI, messages.SPLIT_EMOJI, messages.AUDIO_EMOJI, messages.SUBTITLE_EMOJI, messages.LANGUAGE_EMOJI, messages.NSFW_EMOJI],
-            [messages.TAG_EMOJI, messages.HELP_EMOJI, messages.LIST_EMOJI, messages.PLAY_EMOJI, messages.KEYBOARD_EMOJI, messages.LINK_EMOJI, "🧾"]
+            [messages.TAG_EMOJI, messages.HELP_EMOJI, messages.LIST_EMOJI, messages.PLAY_EMOJI, messages.KEYBOARD_EMOJI, messages.LINK_EMOJI, "🧾"],
+            extra_row
         ]
     else:  # 2x3 mode (default)
         keyboard = [
             ["/clean", "/cookie", "/settings"],
-            ["/playlist", "/search", "/help"]
+            ["/playlist", "/search", "/help"],
+            extra_row
         ]
     
     return ReplyKeyboardMarkup(

@@ -150,6 +150,7 @@ from COMMANDS.subtitles_cmd import *
 from COMMANDS.dubs_cmd import *
 from COMMANDS.tag_cmd import *
 from COMMANDS.channels_cmd import *
+from COMMANDS.vars_cmd import *
 from COMMANDS.proxy_cmd import proxy_command
 from COMMANDS.cookies_cmd import download_cookie
 

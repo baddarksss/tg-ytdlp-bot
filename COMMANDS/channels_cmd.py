@@ -86,6 +86,11 @@ def _show_panel(user_id: int, answer_msg_id: int = 0):
     safe_send_message(user_id, text, reply_markup=kb)
 
 
+def show_panel(user_id: int, answer_msg_id: int = 0):
+    """برای ماژول‌های دیگر (مثل دکمهٔ «📢 کانال‌ها» در پنلِ متغیرها)."""
+    _show_panel(user_id, answer_msg_id)
+
+
 # ─────────────────────────── دستورها ───────────────────────────
 
 def handle_channels_text(app, message) -> bool:
@@ -107,6 +112,15 @@ def handle_channels_text(app, message) -> bool:
         return False
     low = text.lower()
     head = low.split()[0].split("@")[0]
+
+    # ۰) دکمهٔ «📢 کانال‌ها» در کیبوردِ پایینِ چت (بدونِ دستور)
+    label = text.replace("\u200c", "").strip()
+    if label in ("📢 کانال‌ها", "کانال‌ها", "📢 کانالها", "کانالها", "📢"):
+        if not _is_admin(uid):
+            safe_send_message(uid, "⛔️ این بخش فقط برای مدیرِ ربات است.")
+            return True
+        _show_panel(uid)
+        return True
 
     # ۱) دستورها
     if head in ("/channels", "/channel", "/kanal", "/addchannel", "/channeladd"):

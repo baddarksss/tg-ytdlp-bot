@@ -184,15 +184,15 @@ def url_distractor(app, message):
         handle_args_text_input(app, message)
         return
 
-    # کانال‌های مقصدِ فیلم: /channels، /addchannel و حالتِ «آیدی کانال را بفرست»
-    # (مثلِ /settings و /clean از همین‌جا مسیریابی می‌شود، چون این هندلر
-    #  اولین هندلرِ متنِ خصوصی است و بقیه را می‌بندد)
+    # دستورهای اضافیِ این نسخه (کانال‌ها و متغیرها): مثلِ /settings و /clean از
+    # همین‌جا مسیریابی می‌شوند، چون این هندلر اولین هندلرِ متنِ خصوصی است و
+    # زنجیرهٔ هندلرها را می‌بندد ⇒ هندلرِ متنیِ جدا ثبت‌شده هیچ‌وقت اجرا نمی‌شود.
     try:
-        from COMMANDS.channels_cmd import handle_channels_text
-        if handle_channels_text(app, message):
+        from HELPERS.extra_router import route_extra_text
+        if route_extra_text(app, message):
             return
     except Exception as e:
-        logger.error(f"url_distractor: channels routing failed: {e}")
+        logger.error(f"url_distractor: extra routing failed: {e}")
     
     # Check for args import (flexible recognition for forwarded messages)
     # Check for headers in all supported languages
