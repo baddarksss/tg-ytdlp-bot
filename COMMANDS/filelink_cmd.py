@@ -198,14 +198,13 @@ def filelink_media(app, message):
         _delegate_cookie(app, message)
         return
 
-    # ۳) بزرگ‌تر از سقفِ دانلودِ Bot API ⇒ لینکِ مستقیم ممکن نیست
+    # ۳) بزرگ‌تر از سقفِ خودِ تلگرام (۲ گیگ) ⇒ حتی با MTProto هم نمی‌شود
     if size > fl.MAX_TG_DOWNLOAD:
         safe_send_message(uid,
-                          "⚠️ این فایل <b>%s</b> است و Bot API معمولیِ تلگرام فقط تا "
-                          "<b>۲۰ مگابایت</b> فایلِ فرستاده‌شده را به ربات می‌دهد.\n\n"
-                          "دو راه: فایل را جای دیگری آپلود کن و <b>لینکش</b> را به ربات بده "
-                          "(خودم دانلود می‌کنم) — یا سرورِ Bot API محلی راه بیندازیم تا "
-                          "فایل‌های ۲ گیگی هم مستقیم بشوند. بگو کدام را می‌خواهی."
+                          "⚠️ این فایل <b>%s</b> است و تلگرام به ربات بیشتر از "
+                          "<b>۲ گیگابایت</b> نمی‌دهد.\n\n"
+                          "اگر فایل بزرگ‌تری داری، تکه‌تکه‌اش کن (دستورِ /split) یا "
+                          "لینکش را جای دیگری بگذار و به ربات بده تا خودم بگیرم."
                           % fl.human_size(size))
         return
 
@@ -252,17 +251,28 @@ def flmk_callback(app, cq):
         return True
     name, size, _kind = info
     if size > fl.MAX_TG_DOWNLOAD:
-        safe_send_message(uid, "⚠️ فایل بزرگ‌تر از ۲۰ مگ است؛ Bot API معمولی نمی‌دهدش.")
+        safe_send_message(uid, "⚠️ این فایل از سقفِ ۲ گیگابایتیِ تلگرام بزرگ‌تر است.")
         return True
+    # فایل‌های بزرگ چند دقیقه‌ای طول می‌کشند ⇒ همان پیام را ⏳ می‌کنیم و بعد لینک می‌گذاریم
+    with contextlib.suppress(Exception):
+        safe_edit_message_text(uid, cq.message.id,
+                               "⏳ دارم فایل (<b>%s</b>) را از تلگرام می‌گیرم…"
+                               % fl.human_size(size))
     tmp = os.path.join(fl.links_dir(), "tmp_%s_%s" % (secrets.token_hex(4), name))
     try:
-        got = run_pyrogram_client_coroutine(app, app.download_media(msg, file_name=tmp), timeout=900)
+        got = run_pyrogram_client_coroutine(app, app.download_media(msg, file_name=tmp),
+                                            timeout=fl.DOWNLOAD_TIMEOUT)
         path = got if isinstance(got, str) else tmp
-        if not os.path.exists(path):
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
             raise RuntimeError("file not downloaded")
     except Exception as e:
         logger.error(f"filelink: download failed: {e}")
-        safe_send_message(uid, "❌ دانلودِ فایل از تلگرام نشد: %s" % str(e)[:120])
+        with contextlib.suppress(Exception):
+            safe_edit_message_text(uid, cq.message.id, "❌ دانلودِ فایل از تلگرام نشد.")
+        safe_send_message(uid,
+                          "❌ فایل را نتوانستم از تلگرام بگیرم: <code>%s</code>\n\n"
+                          "یک بار دیگر امتحان کن؛ اگر باز هم نشد بگو، راهِ دیگری "
+                          "(سرورِ Bot API محلی) می‌گذاریم." % str(e)[:150])
         return True
     rec = fl.add_file(path, name, uid, ttl, message_id=msg_id)
     with contextlib.suppress(Exception):
