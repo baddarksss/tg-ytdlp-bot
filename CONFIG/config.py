@@ -82,6 +82,9 @@ class Config(_Base):
     LOGS_PAID_ID = ev.i("LOGS_PAID_ID", _Base.LOGS_PAID_ID)
     LOG_EXCEPTION = ev.i("LOG_EXCEPTION", _Base.LOG_EXCEPTION)
     SUBSCRIBE_CHANNEL = ev.i("SUBSCRIBE_CHANNEL", _Base.SUBSCRIBE_CHANNEL)
+    # کانالِ مقصدِ «کپیِ تمیزِ فیلم» — مثلا -1001234567890 یا @mychannel
+    # 0 / خالی = خاموش. ربات باید در آن کانال ادمین (اجازهٔ پست) باشد.
+    COPY_CHANNEL_ID = ev.s("COPY_CHANNEL_ID", "")
     SUBSCRIBE_CHANNEL_URL = ev.opt("SUBSCRIBE_CHANNEL_URL", _Base.SUBSCRIBE_CHANNEL_URL)
     CHANNEL_GUARD_SESSION_STRING = ev.opt(
         "CHANNEL_GUARD_SESSION_STRING", _Base.CHANNEL_GUARD_SESSION_STRING

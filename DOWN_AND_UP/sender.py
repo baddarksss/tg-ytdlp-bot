@@ -12,7 +12,7 @@ from DOWN_AND_UP.ffmpeg import get_video_info_ffprobe
 import os
 import subprocess
 import json
-from HELPERS.safe_messeger import safe_forward_messages, safe_send_message, safe_edit_message_text
+from HELPERS.safe_messeger import safe_forward_messages, safe_send_message, safe_edit_message_text, safe_copy_message
 from URL_PARSERS.thumbnail_downloader import download_thumbnail
 from CONFIG.config import Config
 from CONFIG.messages import Messages, safe_get_messages
@@ -28,6 +28,40 @@ app = get_app()
 # Dictionary to track active uploads for logging
 _active_uploads = {}
 _active_uploads_lock = threading.Lock()
+
+def _copy_film_to_channel(sent_msg, user_id: int) -> None:
+    """کپیِ تمیزِ فیلم در کانال (بدون برچسبِ «Forwarded from»).
+
+    • مقصد از متغیرِ محیطی COPY_CHANNEL_ID خوانده می‌شود (-100… یا @username).
+    • خالی / 0 / مقدارِ نمونه‌ای ⇒ خاموش است و هیچ کاری نمی‌کند.
+    • کپشن عیناً همان کپشنِ پیامِ کاربر است.
+    • هر خطایی فقط لاگ می‌شود؛ ارسال به کاربر هرگز به‌خاطر آن خراب نمی‌شود.
+    """
+    try:
+        raw = str(getattr(Config, "COPY_CHANNEL_ID", "") or "").strip()
+        if not raw or raw.lower() in ("0", "none", "off", "false", "-1001234567890"):
+            return
+        try:
+            target = int(raw)
+        except ValueError:
+            target = raw                      # نام کاربریِ کانال (@name)
+        msg_id = getattr(sent_msg, "id", None)
+        if not msg_id:
+            return
+        if not (getattr(sent_msg, "video", None) or getattr(sent_msg, "document", None)):
+            return
+        copied = safe_copy_message(target, user_id, msg_id)
+        if copied is not None:
+            logger.info(
+                f"copy_channel: film copied to {target} (new message id={getattr(copied, 'id', '?')})"
+            )
+        else:
+            logger.error(
+                f"copy_channel: could not copy film to {target} — bot must be an admin there with post rights"
+            )
+    except Exception as e:
+        logger.error(f"copy_channel: unexpected error: {e}")
+
 
 # Sentinel returned by send_videos when a single video was split into multiple
 # parts and sent successfully. A truthy value distinguishes "split success" from
@@ -1335,6 +1369,8 @@ def send_videos(
                 # not alarm the user or pollute the LOG_EXCEPTION channel:
                 # log a warning and continue the workflow (issue #447).
                 logger.warning(safe_get_messages(user_id).SENDER_ERROR_SENDING_FULL_DESCRIPTION_FILE_MSG.format(error=e))
+        # کپیِ تمیزِ فیلم در کانال (اگر COPY_CHANNEL_ID ست شده باشد)
+        _copy_film_to_channel(video_msg, user_id)
         return video_msg
     finally:
         # Remove ASCII-safe hardlink if it was created

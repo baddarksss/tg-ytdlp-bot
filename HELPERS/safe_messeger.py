@@ -420,6 +420,49 @@ def safe_forward_messages(chat_id, from_chat_id, message_ids, **kwargs):
             logger.error(f"Failed to forward messages after {max_retries} attempts: {e}")
             return None
 
+# Helper function for safely copying a message (film) to a channel: a clean
+# copy — the target post has NO "Forwarded from ..." header, it keeps the same
+# caption. Used for the optional "copy films to my channel" feature.
+def safe_copy_message(chat_id, from_chat_id, message_id, **kwargs):
+    _messages = safe_get_messages(None)
+    user_id = chat_id
+    max_retries = 3
+    retry_delay = 5
+
+    with _message_send_locks_lock:
+        if chat_id not in _message_send_locks:
+            _message_send_locks[chat_id] = threading.Lock()
+        chat_lock = _message_send_locks[chat_id]
+
+    with chat_lock:
+        last_sent = _last_message_sent.get(chat_id, 0)
+        now = time.time()
+        min_spacing = 0.5
+        if now - last_sent < min_spacing:
+            time.sleep(min_spacing - (now - last_sent))
+        _last_message_sent[chat_id] = time.time()
+
+    for attempt in range(max_retries):
+        try:
+            app = get_app_safe()
+            return run_pyrogram_client_coroutine(
+                app, app.copy_message(chat_id, from_chat_id, message_id, **kwargs)
+            )
+        except FloodWait as e:
+            if e.value <= 60 and attempt < max_retries - 1:
+                logger.warning(f"FloodWait ({e.value}s) while copying to {chat_id}, retrying ({attempt+1}/{max_retries})")
+                time.sleep(e.value + 1)
+                continue
+            _write_flood_wait_file(chat_id, e.value)
+            logger.warning(f"Flood wait detected ({e.value}s) while copying message to {chat_id}")
+            return None
+        except Exception as e:
+            if _should_retry(e, user_id, retry_delay) and attempt < max_retries - 1:
+                continue
+            logger.error(f"Failed to copy message to {chat_id} after {max_retries} attempts: {e}")
+            return None
+
+
 # Helper function for safely editing message text with flood wait handling
 def safe_edit_message_text(chat_id, message_id, text, **kwargs):
     _messages = safe_get_messages(None)

@@ -111,6 +111,7 @@ TZ=Asia/Tehran
 | متغیر | توضیح |
 |---|---|
 | `LOGS_VIDEO_ID` / `LOGS_NSFW_ID` / `LOGS_IMG_ID` / `LOGS_PAID_ID` | کانال لاگ تفکیکی (اگر نگذاری، از `LOGS_ID`/`LOG_EXCEPTION` استفاده می‌شود) |
+| `COPY_CHANNEL_ID` | کانالِ مقصدِ **کپیِ تمیزِ فیلم** (`-100…` یا `@username`). خالی/`0` = خاموش. بعد از هر آپلود، همان فیلم با همان کپشن به‌صورت پستِ تازه (بدون «Forwarded from») در آن کانال گذاشته می‌شود؛ ربات باید آن‌جا ادمین باشد |
 | `SUBSCRIBE_CHANNEL` | آیدی کانال عضویت اجباری — `0` یعنی غیرفعال |
 | `SUBSCRIBE_CHANNEL_URL` | لینک دعوت همان کانال |
 | `CHANNEL_GUARD_SESSION_STRING` | فقط برای اسکنر ChannelGuard (نیاز به سشن یوزر دارد) |
