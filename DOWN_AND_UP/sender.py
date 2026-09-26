@@ -7,7 +7,7 @@ from HELPERS.logger import logger
 from HELPERS.logger import get_log_channel
 from HELPERS.download_status import progress_bar
 from HELPERS.limitter import TimeFormatter, humanbytes
-from HELPERS.caption import truncate_caption
+from HELPERS.caption import truncate_caption, single_link_caption
 from DOWN_AND_UP.ffmpeg import get_video_info_ffprobe
 import os
 import subprocess
@@ -393,17 +393,16 @@ def send_videos(
     is_shorts = is_youtube and ('/shorts/' in video_url or 'youtube.com/shorts/' in video_url)
 
     try:
-        # Logic simplified: use tags that were already generated in down_and_up.
-        # Use original title for caption, but truncated description
-        title_html, pre_block, blockquote_content, tags_block, link_block, was_truncated = truncate_caption(
-            title=caption,  # Original title for caption
-            description=full_video_title,  # Full description to be truncated
-            url=video_url,
-            tags_text=tags_text,  # Use final tags for calculation
-            max_length=1000,  # Reduced for safety
-            user_id=user_id,
-            quality_codec_suffix=video_quality_codec,
-        )
+        # ── کپشنِ یک‌تکه (خواستهٔ کاربر) ──
+        # متنِ فیلم از سایت گرفته می‌شود و «خودِ همان متن» لینک می‌شود:
+        #   <a href="لینکِ فیلم">توضیحاتِ فیلم</a>
+        # هیچ عنوانِ بولد / بلاک‌کوت / هشتگ / لینکِ جدا / آیدیِ ربات در کپشن نیست.
+        title_html = ''
+        pre_block = ''
+        blockquote_content = ''
+        tags_block = ''
+        link_block = ''
+        was_truncated = False
         # Define spoiler flag for porn-tagged content
         try:
             is_spoiler = bool(re.search(r"(?i)(?:^|\s)#nsfw(?:\s|$)", tags_text or ""))
@@ -411,16 +410,9 @@ def send_videos(
             is_spoiler = False
         # Флаг: было ли отправлено как платное медиа
         was_paid = False
-        # Form HTML caption: title outside the quote, timecodes outside the quote, description in the quote, tags and link outside the quote
-        cap = ''
-        if title_html:
-            cap += title_html + '\n\n'
-        if pre_block:
-            cap += pre_block + '\n'
-        cap += f'<blockquote expandable>{blockquote_content}</blockquote>\n'
-        if tags_block:
-            cap += tags_block
-        cap += link_block
+        # کپشنِ نهایی = فقط متنِ فیلم، به‌صورت لینک (هیچ متنِ اضافه‌ای نیست)
+        cap = single_link_caption(caption, full_video_title, video_url, max_length=1000)
+        link_block = cap
 
         def _should_generate_cover(video_path: str, duration_seconds: int, is_paid: bool = False) -> bool:
             try:

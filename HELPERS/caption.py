@@ -215,3 +215,46 @@ def truncate_caption(
         was_truncated = True
     
     return title_html, pre_block_str, blockquote_content, tags_block, link_block, was_truncated
+
+
+
+def single_link_caption(title: str, description: str, url: str, max_length: int = 1000) -> str:
+    """کپشنِ یک‌تکه: تمامِ متن، خودش لینک است.
+
+    خروجی دقیقاً یک بلوک است:  <a href="آدرسِ فیلم">متنِ فیلم</a>
+    • متن = توضیحاتِ سایت ⇒ اگر نبود، عنوان ⇒ اگر نبود، دامنهٔ سایت.
+    • هیچ عنوانِ بولد، بلاک‌کوت، هشتگ، لینکِ جدا یا نامِ ربات اضافه نمی‌شود.
+    • اگر متن از سقفِ تلگرام (۱۰۲۴ کاراکتر) بلندتر باشد، با «...» کوتاه می‌شود.
+    """
+    import html as _html
+    from urllib.parse import urlparse
+
+    url = (url or "").strip()
+    text = (description or "").strip() or (title or "").strip()
+    if not text:
+        host = ""
+        try:
+            host = (urlparse(url).netloc or "").lower()
+        except Exception:
+            host = ""
+        if host.startswith("www."):
+            host = host[4:]
+        text = host or url
+    # اگر متنِ سایت خودش تگِ HTML داشت، پاکش کن تا کپشنِ ما سالم بماند
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    prefix = '<a href="%s">' % _html.escape(url, quote=True)
+    suffix = "</a>"
+    room = max_length - len(prefix) - len(suffix)
+    if room <= 4:
+        return _html.escape(text)[:max_length]
+    esc = _html.escape(text)
+    if len(esc) > room:
+        cut = text[: max(1, room - 3)]
+        esc = _html.escape(cut)
+        while cut and len(esc) > room - 3:
+            cut = cut[:-1]
+            esc = _html.escape(cut)
+        esc = esc.rstrip() + "..."
+    return prefix + esc + suffix
