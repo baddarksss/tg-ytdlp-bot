@@ -83,7 +83,12 @@ def send_reply_keyboard_always(user_id, mode="2x3"):
         msg_id = reply_keyboard_msg_ids.get(user_id)
         if msg_id:
             try:
-                app.edit_message_text(user_id, msg_id, "\u2063", reply_markup=get_main_reply_keyboard(mode))
+                # در این پروژه هندلرها در ترد اجرا می‌شوند؛ برای اینکه متدِ async کلاینت
+                # واقعاً اجرا شود (نه فقط یک کوروتینِ «never awaited») از همین کمکی
+                # استفاده می‌کنیم — وگرنه کیبورد همیشه نسخهٔ اولش می‌ماند و آپدیت نمی‌شود.
+                from HELPERS.safe_messeger import run_pyrogram_client_coroutine
+                run_pyrogram_client_coroutine(app, app.edit_message_text(
+                    user_id, msg_id, "\u2063", reply_markup=get_main_reply_keyboard(mode)))
                 return
             except Exception as e:
                 # Log only if the error is not MESSAGE_ID_INVALID
@@ -99,7 +104,8 @@ def send_reply_keyboard_always(user_id, mode="2x3"):
         # If there was another service msg_id (and it is not equal to the new one), we try to delete the old message
         if msg_id and msg_id != msg.id:
             try:
-                app.delete_messages(user_id, [msg_id])
+                from HELPERS.safe_messeger import run_pyrogram_client_coroutine
+                run_pyrogram_client_coroutine(app, app.delete_messages(user_id, [msg_id]))
             except Exception as e:
                 logger.warning(f"Failed to delete old reply keyboard message: {e}")
         reply_keyboard_msg_ids[user_id] = msg.id
