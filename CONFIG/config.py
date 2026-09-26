@@ -88,6 +88,10 @@ class Config(_Base):
     # True (پیش‌فرض) = بعد از آپلود، دکمه‌های کانال زیرِ فیلم می‌آید تا خودت انتخاب کنی
     # False = بدون پرسیدن، مستقیم در اولین کانال کپی می‌شود
     COPY_CHANNEL_ASK = ev.b("COPY_CHANNEL_ASK", True)
+    # توکنِ API ریلوی (اختیاری) — برای دکمهٔ «ذخیره در Variables» و همگام‌سازی خودکار
+    RAILWAY_API_TOKEN = ev.opt("RAILWAY_API_TOKEN", "")
+    # True = هر بار کانالی اضافه/حذف شد، خودش در COPY_CHANNEL_ID بنویسد
+    CHANNEL_AUTOSYNC = ev.b("CHANNEL_AUTOSYNC", False)
     SUBSCRIBE_CHANNEL_URL = ev.opt("SUBSCRIBE_CHANNEL_URL", _Base.SUBSCRIBE_CHANNEL_URL)
     CHANNEL_GUARD_SESSION_STRING = ev.opt(
         "CHANNEL_GUARD_SESSION_STRING", _Base.CHANNEL_GUARD_SESSION_STRING

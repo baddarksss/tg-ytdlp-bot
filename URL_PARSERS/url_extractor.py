@@ -183,6 +183,16 @@ def url_distractor(app, message):
     if user_id in user_input_states:
         handle_args_text_input(app, message)
         return
+
+    # کانال‌های مقصدِ فیلم: /channels، /addchannel و حالتِ «آیدی کانال را بفرست»
+    # (مثلِ /settings و /clean از همین‌جا مسیریابی می‌شود، چون این هندلر
+    #  اولین هندلرِ متنِ خصوصی است و بقیه را می‌بندد)
+    try:
+        from COMMANDS.channels_cmd import handle_channels_text
+        if handle_channels_text(app, message):
+            return
+    except Exception as e:
+        logger.error(f"url_distractor: channels routing failed: {e}")
     
     # Check for args import (flexible recognition for forwarded messages)
     # Check for headers in all supported languages

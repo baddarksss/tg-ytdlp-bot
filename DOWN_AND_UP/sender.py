@@ -93,7 +93,8 @@ def _ask_channel_for_film(sent_msg, user_id: int) -> None:
             logger.warning("channel_ask: no channel where the bot can post — buttons skipped")
             return
         kb = cs.film_keyboard()
-        app_.edit_message_reply_markup(user_id, getattr(sent_msg, "id", 0), reply_markup=kb)
+        from HELPERS.safe_messeger import safe_edit_reply_markup
+        safe_edit_reply_markup(user_id, getattr(sent_msg, "id", 0), reply_markup=kb)
         logger.info(f"channel_ask: channel buttons attached to film {sent_msg.id} "
                     f"({len(ready)} channel(s))")
     except Exception as e:

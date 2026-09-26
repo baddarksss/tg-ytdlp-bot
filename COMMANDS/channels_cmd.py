@@ -6,16 +6,16 @@
 • ``/addchannel -100…``     ⇒ همان کار به‌صورت دستی
 • دکمه‌های زیرِ فیلم        ⇒ ``chcopy|<key>`` = فرستادنِ همان فیلم به آن کانال
 """
+import contextlib
+
 from pyrogram import filters
-from pyrogram.types import (InlineKeyboardMarkup, InlineKeyboardButton,
-                            ForceReply, ReplyParameters)
+from pyrogram.types import ForceReply, ReplyParameters
 
 from CONFIG.config import Config
 from HELPERS.app_instance import get_app
 from HELPERS.logger import logger, send_to_logger
 from HELPERS.safe_messeger import (safe_send_message, safe_edit_message_text,
-                                   safe_edit_reply_markup, safe_copy_message,
-                                   safe_delete_messages)
+                                   safe_edit_reply_markup, safe_copy_message)
 from HELPERS import channel_store as cs
 
 app = get_app()
@@ -88,52 +88,47 @@ def _show_panel(user_id: int, answer_msg_id: int = 0):
 
 # ─────────────────────────── دستورها ───────────────────────────
 
-@app.on_message(filters.command("channels") & filters.private)
-def channels_command(app, message):
-    """پنلِ کانال‌ها (فقط ادمین)."""
-    user_id = int(message.chat.id)
-    if not _is_admin(user_id):
-        safe_send_message(user_id, "⛔️ این دستور فقط برای مدیرِ ربات است.")
-        return True
-    text, kb = cs.panel(app)
-    safe_send_message(user_id, text, reply_markup=kb)
-    send_to_logger(message, f"channels panel opened ({len(cs.channels())} channels)")
-    return True
+def handle_channels_text(app, message) -> bool:
+    """نقطهٔ ورودِ متن‌ها — از داخل url_distractor صدا زده می‌شود.
 
+    چرا اینجا و نه با @app.on_message: در این پروژه هندلرِ url_distractor
+    (filters.text & filters.private) اول از همه ثبت می‌شود و زنجیرهٔ هندلرها را
+    می‌بندد؛ پس هر هندلرِ متنیِ جدید هرگز اجرا نمی‌شود. راهِ درست، مثلِ
+    /settings و /clean، مسیریابی از داخلِ همان url_distractor است.
 
-@app.on_message(filters.command("addchannel") & filters.private)
-def addchannel_command(app, message):
-    """``/addchannel -100…`` یا ``/addchannel @name``"""
-    user_id = int(message.chat.id)
-    if not _is_admin(user_id):
-        safe_send_message(user_id, "⛔️ این دستور فقط برای مدیرِ ربات است.")
-        return True
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].strip():
-        _ask_for_channel(user_id, message.id)
-        return True
-    _register_channel(app, user_id, parts[1].strip())
-    return True
-
-
-@app.on_message(filters.private & filters.reply & filters.text)
-def channel_reply_handler(app, message):
-    """پاسخِ ریپلای به پیامِ «آیدی کانال را بفرست» ⇒ افزودنِ کانال.
-
-    اگر کاربر منتظر نیست، False برمی‌گردانیم تا بقیهٔ هندلرها (روترِ لینک) کار کنند.
+    خروجی True = پیام مصرف شد و بقیهٔ کارها نباید اجرا شوند.
     """
-    user_id = int(message.chat.id)
-    ask_id = _PENDING_ADD.get(user_id, 0)
-    if not ask_id:
+    try:
+        uid = int(message.chat.id)
+    except Exception:
         return False
-    replied = getattr(getattr(message, "reply_to_message", None), "id", 0) or 0
-    if replied != ask_id:
+    text = (getattr(message, "text", None) or "").strip()
+    if not text:
         return False
-    _PENDING_ADD.pop(user_id, None)
-    if not _is_admin(user_id):
+    low = text.lower()
+    head = low.split()[0].split("@")[0]
+
+    # ۱) دستورها
+    if head in ("/channels", "/channel", "/kanal", "/addchannel", "/channeladd"):
+        if not _is_admin(uid):
+            safe_send_message(uid, "⛔️ این دستور فقط برای مدیرِ ربات است.")
+            return True
+        if head in ("/channels", "/channel", "/kanal"):
+            _show_panel(uid)
+            return True
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            _ask_for_channel(uid, getattr(message, "id", 0))
+            return True
+        _register_channel(app, uid, parts[1].strip())
         return True
-    _register_channel(app, user_id, (message.text or "").strip(), ask_id)
-    return True
+
+    # ۲) حالتِ «آیدی کانال را بفرست» (بعد از زدنِ دکمهٔ ➕)
+    if uid in _PENDING_ADD and _is_admin(uid):
+        _PENDING_ADD.pop(uid, None)
+        _register_channel(app, uid, text)
+        return True
+    return False
 
 
 # ─────────────────────────── دکمه‌های پنل ───────────────────────────
@@ -176,6 +171,39 @@ def chdel_callback(app, cq):
     except Exception:
         pass
     cq.answer(msg if ok else ("⚠️ " + msg), show_alert=not ok)
+    return True
+
+
+@app.on_callback_query(filters.regex(r"^chbackup$"))
+def chbackup_callback(app, cq):
+    """بکاپ: خطِ آمادهٔ COPY_CHANNEL_ID را برای کاربر می‌فرستد (+ فایل txt)."""
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    text = cs.backup_text()
+    safe_send_message(uid, text)
+    value = cs.backup_value()
+    if value:
+        with contextlib.suppress(Exception):
+            import io
+            app.send_document(uid, io.BytesIO(value.encode("utf-8")),
+                              file_name="COPY_CHANNEL_ID.txt",
+                              caption="مقدارِ متغیرِ COPY_CHANNEL_ID")
+    cq.answer("بکاپ فرستاده شد ✅")
+    return True
+
+
+@app.on_callback_query(filters.regex(r"^chcloudsync$"))
+def chcloudsync_callback(app, cq):
+    """ذخیرهٔ فهرستِ کانال‌ها در Variables ریلوی (نیاز به توکن دارد)."""
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    ok, msg = cs.railway_sync()
+    safe_send_message(uid, ("☁️ " + msg) if ok else ("⚠️ " + msg))
+    cq.answer("انجام شد" if ok else "نشد", show_alert=not ok)
     return True
 
 

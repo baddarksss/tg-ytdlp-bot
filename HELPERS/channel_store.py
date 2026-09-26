@@ -204,6 +204,8 @@ def add_channel(key: str, title: str = "") -> tuple:
         ok = _write_file(items)
     if not ok:
         return False, "ذخیره‌سازیِ فهرست ناموفق بود"
+    if autosync_enabled():
+        railway_sync()
     return True, "افزوده شد"
 
 
@@ -216,6 +218,8 @@ def remove_channel(key: str) -> tuple:
     with _LOCK:
         items = [it for it in _read_file() if key_of(it["id"]) != k]
         ok = _write_file(items)
+    if ok and autosync_enabled():
+        railway_sync()
     return (ok, "حذف شد" if ok else "حذف ناموفق بود")
 
 
@@ -231,13 +235,20 @@ def bot_can_post(app, key: str, force: bool = False) -> tuple:
     ok, title, err = False, "", ""
     target = int(k) if not k.startswith("@") else k
     try:
-        chat = app.get_chat(target)
+        def _call(coro):
+            """هم با کلاینتِ سینک کار می‌کند هم async (این پروژه هر دو حالت را دارد)."""
+            try:
+                from HELPERS.safe_messeger import run_pyrogram_client_coroutine
+                return run_pyrogram_client_coroutine(app, coro)
+            except Exception:
+                return coro
+        chat = _call(app.get_chat(target))
         title = str(getattr(chat, "title", "") or "").strip()
         username = str(getattr(chat, "username", "") or "").strip()
         if not title:
             title = ("@" + username) if username else str(target)
-        me = app.get_me()
-        member = app.get_chat_member(target, getattr(me, "id", 0) or "me")
+        me = _call(app.get_me())
+        member = _call(app.get_chat_member(target, getattr(me, "id", 0) or "me"))
         status = str(getattr(member, "status", "")).lower()
         can_post = getattr(member, "can_post_messages", None)
         is_admin = ("owner" in status) or ("creator" in status) or ("administrator" in status)
@@ -305,6 +316,102 @@ def panel(app, copied=None) -> tuple:
     lines.append("")
     lines.append("ℹ️ کانال‌هایی که با 🔒 مشخص‌اند از متغیرِ محیطی <code>COPY_CHANNEL_ID</code> "
                  "می‌آیند و فقط از Railway → Variables قابلِ حذف‌اند.")
+    lines.append("")
+    lines.append("💾 <b>بکاپ</b> = خطِ آمادهٔ <code>COPY_CHANNEL_ID</code> برای کپی در "
+                 "Railway → Variables (تا در ریلویِ بعدی دستی اضافه نکنی).")
+    lines.append("☁️ <b>ذخیره در Variables</b> = خودِ ربات مقدار را از API ریلوی می‌نویسد "
+                 "(سرویس یک بار ری‌استارت می‌شود).")
     rows.append([InlineKeyboardButton("➕ افزودن کانال", callback_data="chadd"),
                  InlineKeyboardButton("🔄 بررسیِ ادمین‌بودن", callback_data="chrefresh")])
+    rows.append([InlineKeyboardButton("💾 بکاپِ کانال‌ها", callback_data="chbackup"),
+                 InlineKeyboardButton("☁️ ذخیره در Variables", callback_data="chcloudsync")])
     return "\n".join(lines), _kb(rows)
+
+
+# ─────────────────────────── بکاپ / همگام‌سازی با Variables ───────────────────────────
+
+def desired_keys(exclude: str = "") -> list:
+    """فهرستِ کاملِ کانال‌ها (Variables + افزوده‌شده‌های داخلِ ربات) به‌ترتیب."""
+    excl = key_of(exclude) or exclude
+    out: list = []
+    for k in env_keys():
+        if k != excl and k not in out:
+            out.append(k)
+    for it in _read_file():
+        k = key_of(it["id"])
+        if k and k != excl and k not in out:
+            out.append(k)
+    return out
+
+
+def backup_value() -> str:
+    """مقدارِ آمادهٔ کپی برای متغیرِ COPY_CHANNEL_ID در Railway."""
+    return ",".join(desired_keys())
+
+
+def backup_text() -> str:
+    keys = desired_keys()
+    lines = ["💾 <b>بکاپِ کانال‌ها</b>", ""]
+    if not keys:
+        lines.append("الان هیچ کانالی نداری.")
+        return "\n".join(lines)
+    lines.append("این خط را کپی کن و در <b>Railway → Variables</b> بگذار "
+                 "(اسمش <code>COPY_CHANNEL_ID</code>):")
+    lines.append("")
+    lines.append("<code>%s=%s</code>" % ("COPY_CHANNEL_ID", backup_value()))
+    lines.append("")
+    lines.append("کانال‌ها:")
+    for k in keys:
+        ch = get(k)
+        lines.append("• <b>%s</b> — <code>%s</code>%s"
+                     % (ch.get("title") or k, k, " 🔒" if ch.get("locked") else ""))
+    lines.append("")
+    lines.append("با همین یک خط، اگر روی رِیلویِ جدید بالا آمد، کانال‌ها خودشان برمی‌گردند "
+                 "و لازم نیست دستی اضافه کنی.")
+    return "\n".join(lines)
+
+
+def railway_sync() -> tuple:
+    """مقدارِ COPY_CHANNEL_ID را در ریلوی به‌روز می‌کند (توکن لازم است).
+
+    توکن از متغیرِ RAILWAY_API_TOKEN (یا RAILWAY_TOKEN) خوانده می‌شود و آیدی‌های
+    پروژه/محیط/سرویس از متغیرهای خودِ Railway.
+    """
+    token = (str(getattr(Config, "RAILWAY_API_TOKEN", "") or "")
+             or os.environ.get("RAILWAY_API_TOKEN", "")
+             or os.environ.get("RAILWAY_TOKEN", "")).strip()
+    if not token:
+        return False, "توکنِ Railway ست نشده (RAILWAY_API_TOKEN) — خطِ بکاپ را دستی بگذار"
+    pid = str(getattr(Config, "RAILWAY_PROJECT_ID", "") or os.environ.get("RAILWAY_PROJECT_ID", "")).strip()
+    eid = str(getattr(Config, "RAILWAY_ENVIRONMENT_ID", "") or os.environ.get("RAILWAY_ENVIRONMENT_ID", "")).strip()
+    sid = str(getattr(Config, "RAILWAY_SERVICE_ID", "") or os.environ.get("RAILWAY_SERVICE_ID", "")).strip()
+    if not (pid and eid and sid):
+        return False, "آیدی پروژه/محیط/سرویسِ Railway در دسترس نیست"
+    value = backup_value()
+    body = {
+        "query": ("mutation($input: VariableUpsertInput!){variableUpsert(input:$input)}"),
+        "variables": {"input": {"projectId": pid, "environmentId": eid, "serviceId": sid,
+                                "name": "COPY_CHANNEL_ID", "value": value}},
+    }
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://backboard.railway.com/graphql/v2",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8", "replace") or "{}")
+        if (data.get("data") or {}).get("variableUpsert"):
+            logger.info(f"channel_store: COPY_CHANNEL_ID synced to Railway ({value[:120]})")
+            return True, "در Variables ذخیره شد ✅ (ریلوی خودش دوباره اجرا می‌شود)"
+        err = str((data.get("errors") or [{}])[0].get("message") or data)[:140]
+        logger.error(f"channel_store: railway sync failed: {err}")
+        return False, "ذخیره نشد: %s" % err
+    except Exception as e:
+        logger.error(f"channel_store: railway sync error: {e}")
+        return False, "ذخیره نشد: %s" % str(e)[:120]
+
+
+def autosync_enabled() -> bool:
+    return bool(getattr(Config, "CHANNEL_AUTOSYNC", False))
