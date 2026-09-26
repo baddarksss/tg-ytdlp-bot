@@ -367,3 +367,10 @@ def handle_filelink_text(app, message) -> bool:
         show_panel(uid)
         return True
     return False
+
+
+# پاک‌سازیِ دوره‌ایِ لینک‌های منقضی از همان لحظهٔ بالا آمدنِ ربات
+try:
+    fl.start_sweeper()
+except Exception as _e:      # noqa: BLE001
+    logger.warning(f"filelink: sweeper not started: {_e}")

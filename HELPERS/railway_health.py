@@ -130,6 +130,12 @@ def build_app():
     app.router.add_get("/health", _json)
     app.router.add_get("/healthz", _json)
     app.router.add_get("/ready", _ready)
+    # فایل → لینکِ مستقیم: روت‌های /d/<token>/<name> (ماژولِ سبک، بدونِ وابستگی به ربات)
+    try:
+        from HELPERS.filelink_routes import register_routes
+        register_routes(app)
+    except Exception as exc:            # هرگز سرورِ سلامت را نباید از کار بیندازد
+        print("[filelink] routes not registered: %s" % exc)
     return app
 
 

@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 
 from CONFIG.config import Config
+from HELPERS import filelink_routes as fr
 from HELPERS.logger import logger
 
 # ─────────────────────────── تنظیمات ───────────────────────────
@@ -37,27 +38,21 @@ MAX_TG_DOWNLOAD = 20 * 1024 * 1024 - 8192
 
 _LOCK = threading.RLock()
 _SERVER_STARTED = False
+_SWEEPER_STARTED = False
 _URL_CACHE = {"base": "", "at": 0.0}
 
 
 def links_dir() -> str:
-    d = os.path.join(str(getattr(Config, "DATA_DIR", "/data") or "/data"), "filelinks")
-    with contextlib.suppress(Exception):
-        os.makedirs(d, exist_ok=True)
-    return d
+    """پوشهٔ لینک‌ها (مشترک با وب‌سرورِ سلامت — همان پوشهٔ داده)."""
+    return fr.links_dir()
 
 
 def _store_path() -> str:
-    return os.path.join(links_dir(), "links.json")
+    return fr.store_path()
 
 
 def _load() -> dict:
-    try:
-        with open(_store_path(), "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return fr.load()
 
 
 def _save(recs: dict):
@@ -158,16 +153,7 @@ def link_url(rec: dict) -> str:
 
 
 def resolve(token: str):
-    with _LOCK:
-        recs = _load()
-    rec = recs.get(token)
-    if not rec:
-        return None
-    if rec.get("exp") and time.time() > rec["exp"]:
-        return None
-    if not os.path.exists(rec.get("path") or ""):
-        return None
-    return rec
+    return fr.resolve(token)
 
 
 def active() -> list:
@@ -226,23 +212,29 @@ def extend(token: str, ttl: str) -> dict:
 
 
 def sweep() -> list:
-    """پاک‌کردنِ فایل‌های منقضی. لیستِ رکوردهای پاک‌شده را برمی‌گرداند."""
-    now = time.time()
-    expired = []
-    with _LOCK:
-        recs = _load()
-        for token, rec in list(recs.items()):
-            if rec.get("exp") and now > rec["exp"]:
-                expired.append(rec)
-                recs.pop(token, None)
-        if expired:
-            _save(recs)
+    """پاک‌کردنِ فایل‌های منقضی + اطلاع به صاحبِ لینک."""
+    expired = fr.sweep_files()
     for rec in expired:
-        with contextlib.suppress(Exception):
-            os.remove(rec.get("path") or "")
         logger.info(f"filelink: expired {rec.get('token')} ({rec.get('name')})")
         safe_notify(rec, "⏱ زمانِ لینکِ «%s» تمام شد و فایلش پاک شد." % (rec.get("name") or ""))
     return expired
+
+
+def start_sweeper(interval: int = 30):
+    """تردِ پاک‌سازیِ دوره‌ای در پروسهٔ ربات (حذفِ فایلِ منقضی + پیام به کاربر)."""
+    global _SWEEPER_STARTED
+    if _SWEEPER_STARTED:
+        return
+    _SWEEPER_STARTED = True
+
+    def _loop():
+        while True:
+            with contextlib.suppress(Exception):
+                sweep()
+            time.sleep(interval)
+
+    threading.Thread(target=_loop, name="filelink-sweeper", daemon=True).start()
+    logger.info("filelink: sweeper started")
 
 
 def clear_all() -> int:
@@ -336,7 +328,13 @@ def _build_app():
 
 
 def start_server() -> bool:
-    """سرور را یک‌بار در یک ترد جدا بالا می‌آورد. True = بالا آمد/بالاست."""
+    """سرورِ دانلود در پروسهٔ ربات — **فقط اگر پورت آزاد باشد**.
+
+    روی Railway، وب‌سرورِ سلامت (``HELPERS/railway_health.py`` که از entrypoint بالا
+    می‌آید) روی پورتِ عمومی گوش می‌دهد و همان روت‌های ``/d/...`` را سرو می‌کند
+    (به HELPERS/filelink_routes نگاه کن). پس این تابع فقط نگهبانِ حالتِ دوم است:
+    اگر پورت آزاد بود، خودش سرور را بالا می‌آورد؛ اگر گرفته بود، بی‌صدا برمی‌گردد.
+    """
     global _SERVER_STARTED
     if _SERVER_STARTED:
         return True
@@ -349,6 +347,9 @@ def start_server() -> bool:
         try:
             web.run_app(_build_app(), host="0.0.0.0", port=port, loop=loop,
                         print=None, access_log=None)
+        except OSError as e:
+            logger.info(f"filelink: پورت {port} در اختیارِ سرورِ سلامت است ({e}) — "
+                        f"همان روت‌ها را سرو می‌کند.")
         except Exception as e:
             logger.error(f"filelink: server failed on port {port}: {e}")
 
@@ -356,7 +357,7 @@ def start_server() -> bool:
         threading.Thread(target=_run, name="filelink-server", daemon=True).start()
         _SERVER_STARTED = True
         logger.info(f"filelink: server starting on 0.0.0.0:{port}")
-        return True
     except Exception as e:
         logger.error(f"filelink: cannot start server: {e}")
-        return False
+    start_sweeper()
+    return True
