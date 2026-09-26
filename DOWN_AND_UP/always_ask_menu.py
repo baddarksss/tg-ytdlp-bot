@@ -5256,7 +5256,7 @@ def ask_quality_menu(app, message, url, tags, playlist_start_index=1, cb=None, d
         if cb is None:
             # Use original_message_id if provided (for trim mode), otherwise use message.id
             reply_to_id = original_message_id if original_message_id is not None else message.id
-            proc_msg = app.send_message(user_id, processing_text, reply_parameters=ReplyParameters(message_id=reply_to_id), reply_markup=get_main_reply_keyboard())
+            proc_msg = app.send_message(user_id, processing_text, reply_parameters=ReplyParameters(message_id=reply_to_id), reply_markup=get_main_reply_keyboard(user_id=user_id))
             # Save processing message to cache for deletion when download starts
             set_user_proc_msg(user_id, proc_msg)
         else:

@@ -72,6 +72,12 @@ def _ask_channel_for_film(sent_msg, user_id: int) -> None:
     • هیچ کانالی تنظیم نشده باشد ⇒ هیچ اتفاقی نمی‌افتد.
     """
     try:
+        # کانال‌های مقصد مالِ خودِ ادمین است ⇒ برای کاربرِ عادی هیچ دکمه‌ای نمی‌آید
+        try:
+            if int(user_id) not in set(getattr(Config, "ADMIN", []) or []):
+                return
+        except Exception:
+            return
         from HELPERS import channel_store as cs
         if not (getattr(sent_msg, "video", None) or getattr(sent_msg, "document", None)):
             return

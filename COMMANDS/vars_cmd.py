@@ -74,6 +74,71 @@ def vfull_callback(app, cq):
     return True
 
 
+@app.on_callback_query(filters.regex(r"^vadm$"))
+def vadm_callback(app, cq):
+    """فهرستِ ادمین‌ها + افزودن/حذف (ذخیره در متغیرِ ADMIN ریلوی)."""
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    cq.answer("⏳")
+    text = vs.admin_list_text(app)
+    rows = []
+    for a_uid in vs.admins():
+        rows.append([InlineKeyboardButton("🗑 حذف %d" % a_uid, callback_data="vadmrm|%d" % a_uid)])
+    rows.append([InlineKeyboardButton("➕ افزودن ادمین", callback_data="vadmadd")])
+    rows.append([InlineKeyboardButton("🔄 به‌روزرسانی", callback_data="vadm")])
+    rows.append([InlineKeyboardButton("✖️ بستن", callback_data="vclose")])
+    from pyrogram.types import InlineKeyboardMarkup
+    safe_send_message(uid, text, reply_markup=InlineKeyboardMarkup(rows))
+    return True
+
+
+@app.on_callback_query(filters.regex(r"^vadmadd$"))
+def vadmadd_callback(app, cq):
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    vs._set_state(uid, "add_admin")
+    safe_send_message(uid,
+                      "👤 آیدیِ <b>عددی</b> کاربر را بفرست (مثل <code>123456789</code>)، "
+                      "یا <code>@username</code>، یا یک پیام از آن کاربر را <b>فوروارد</b> کن.",
+                      reply_markup=ForceReply(selective=True),
+                      reply_parameters=ReplyParameters(message_id=cq.message.id))
+    cq.answer("منتظرِ آیدی")
+    return True
+
+
+@app.on_callback_query(filters.regex(r"^vadmok\|"))
+def vadmok_callback(app, cq):
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    target = cq.data.split("|", 1)[1].strip()
+    ok, msg = vs.add_admin(app, target)
+    safe_send_message(uid, msg)
+    cq.answer("اضافه شد ✅" if ok else "نشد", show_alert=not ok)
+    return True
+
+
+@app.on_callback_query(filters.regex(r"^vadmrm\|"))
+def vadmrm_callback(app, cq):
+    if not _is_admin(cq.from_user.id):
+        cq.answer("⛔️ فقط مدیرِ ربات", show_alert=True)
+        return True
+    uid = int(cq.message.chat.id)
+    target = cq.data.split("|", 1)[1].strip()
+    if str(cq.from_user.id) == target:
+        cq.answer("خودت را نمی‌توانی حذف کنی", show_alert=True)
+        return True
+    ok, msg = vs.remove_admin(target)
+    safe_send_message(uid, msg)
+    cq.answer("حذف شد 🗑" if ok else "نشد", show_alert=not ok)
+    return True
+
+
 @app.on_callback_query(filters.regex(r"^vess$"))
 def vess_callback(app, cq):
     """بکاپِ ضروری: فقط متغیرهای لازم + کانال‌هایی که ربات ادمینِ آن‌هاست."""

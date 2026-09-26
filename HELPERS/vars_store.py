@@ -167,6 +167,7 @@ def panel(show_full: bool = False) -> tuple:
     vars_, source, warn = variables()
     text = list_text(vars_, source, show_full, warn)
     rows = [
+        [InlineKeyboardButton("👤 ادمین‌ها", callback_data="vadm")],
         [InlineKeyboardButton("📌 بکاپِ ضروری (برای ران‌شدن)", callback_data="vess")],
         [InlineKeyboardButton("📤 بکاپِ کلِ متغیرها (فایل)", callback_data="vbackup"),
          InlineKeyboardButton("🔓 نمایشِ کامل" if not show_full else "🔒 حالتِ پوشیده",
@@ -246,6 +247,120 @@ def delete_variable(name: str) -> tuple:
         logger.info(f"vars_store: deleted {name}")
         return True, "حذف شد ✅ (ریلوی سرویس را یک بار ری‌استارت می‌کند)"
     return False, "ریلوی قبول نکرد"
+
+
+# ─────────────────────────── ادمین‌ها ───────────────────────────
+
+def admins() -> list:
+    """فهرستِ آیدیِ عددیِ ادمین‌های فعلی (از متغیرِ ADMIN)."""
+    out = []
+    for x in (getattr(Config, "ADMIN", []) or []):
+        try:
+            out.append(int(str(x).strip()))
+        except Exception:
+            continue
+    return sorted(set(out))
+
+
+def admin_name(app, uid: int) -> str:
+    """نامِ نمایشیِ یک ادمین (اختیاری — برای زیباییِ فهرست)."""
+    try:
+        chat = app.get_chat(int(uid))
+        name = " ".join(x for x in (getattr(chat, "first_name", ""),
+                                    getattr(chat, "last_name", "") or "") if x).strip()
+        if name:
+            return name
+        if getattr(chat, "username", None):
+            return "@" + chat.username
+    except Exception:
+        pass
+    return ""
+
+
+def resolve_user(app, raw: str):
+    """آیدی/نام کاربری → (uid, نامِ نمایشی, خطا)."""
+    val = (raw or "").strip()
+    if not val:
+        return 0, "", "خالی است"
+    if val.startswith("https://t.me/") or val.startswith("t.me/"):
+        val = val.split("t.me/", 1)[1].strip("/")
+    if val.startswith("@"):
+        val = val[1:]
+    if val.lstrip("-").isdigit():
+        uid = int(val)
+        if uid <= 0:
+            return 0, "", "آیدیِ عددی نامعتبر است (آیدیِ کاربر مثبت است)"
+        return uid, admin_name(app, uid), ""
+    if not val:
+        return 0, "", "نام کاربری نامعتبر"
+    try:
+        chat = app.get_chat("@" + val)
+        uid = int(getattr(chat, "id", 0) or 0)
+        if uid <= 0:
+            return 0, "", "کاربر پیدا نشد"
+        name = " ".join(x for x in (getattr(chat, "first_name", ""),
+                                    getattr(chat, "last_name", "") or "") if x).strip()
+        return uid, (name or ("@" + val)), ""
+    except Exception as e:
+        return 0, "", "پیدا نشد (%s)" % str(e)[:60]
+
+
+def admin_list_text(app=None) -> str:
+    cur = admins()
+    lines = ["👤 <b>ادمین‌های ربات</b>  (%d نفر)" % len(cur), "",
+             "هر کسی اینجا باشد، دکمه‌های مدیریتی (کانال‌ها، متغیرها، لینکِ فایل) را "
+             "می‌بیند و می‌تواند فیلم‌ها را به کانال‌ها بفرستد.", ""]
+    for uid in cur:
+        nm = admin_name(app, uid) if app is not None else ""
+        lines.append("• <code>%d</code>%s" % (uid, (" — %s" % nm) if nm else ""))
+    if not cur:
+        lines.append("(فهرست خالی است)")
+    return "\n".join(lines)
+
+
+def add_admin(app, value: str) -> tuple:
+    """ادمین اضافه می‌کند: آیدیِ عددی یا @نام‌کاربری یا t.me/…"""
+    uid, name, err = resolve_user(app, value)
+    if err:
+        return False, "❌ %s" % err
+    cur = admins()
+    if uid in cur:
+        return False, "این کاربر از قبل ادمین است (<code>%d</code>)." % uid
+    return _save_admins(cur + [uid], name, added=True)
+
+
+def remove_admin(uid) -> tuple:
+    try:
+        uid = int(uid)
+    except Exception:
+        return False, "آیدی نامعتبر"
+    cur = admins()
+    new_list = [x for x in cur if x != uid]
+    if len(new_list) == len(cur):
+        return False, "این کاربر در فهرست نبود."
+    if not new_list:
+        return False, "نمی‌شود همهٔ ادمین‌ها را حذف کرد — حداقل یکی لازم است."
+    return _save_admins(new_list, "", added=False)
+
+
+def _save_admins(new_list, name: str, added: bool) -> tuple:
+    """هم در متغیرِ ADMIN ریلوی ذخیره می‌کند و هم در همین لحظه در حافظه."""
+    value = ",".join(str(x) for x in new_list)
+    old = list(getattr(Config, "ADMIN", []) or [])
+    try:
+        Config.ADMIN = list(new_list)          # اثرِ فوری، بدونِ نیاز به ری‌استارت
+    except Exception:
+        pass
+    ok, msg = set_variable("ADMIN", value)
+    if ok:
+        logger.info(f"vars_store: admins updated ({len(new_list)}): {value[:120]}")
+        return (True, ("✅ ادمین اضافه شد%s.\n%s" % ((" — " + name) if name else "", msg))
+                if added else ("🗑 ادمین حذف شد.\n%s" % msg))
+    try:                                       # ذخیره نشد ⇒ حافظه را برگردان
+        Config.ADMIN = old
+    except Exception:
+        pass
+    return False, "❌ ذخیره نشد: %s\n(برای تغییرِ ادمین‌ها، توکنِ ریلوی لازم است)" % msg
 
 
 # ─────────────────────────── بکاپِ ضروری ───────────────────────────
@@ -383,6 +498,14 @@ def handle_vars_text(app, message) -> bool:
         return True
 
     st = _state_of(uid)
+    # اگر وسطِ افزودنِ ادمین هستیم و کاربر یک پیام فوروارد کرد ⇒ همان آیدی
+    if st.get("action") == "add_admin":
+        fwd_id = getattr(getattr(message, "forward_from", None), "id", None)
+        if not fwd_id:
+            fwd_id = getattr(getattr(getattr(message, "user_shared", None), "user_id", None),
+                             "id", None)
+        if fwd_id:
+            text = str(fwd_id)
     if not st:
         return False
     if not is_admin(uid):
@@ -429,6 +552,24 @@ def handle_vars_text(app, message) -> bool:
         from HELPERS.safe_messeger import safe_send_message
         safe_send_message(uid, ("✅ <b>%s</b> ذخیره شد.\n%s" % (name, msg)) if ok
                           else ("❌ %s: %s" % (name, msg)))
+        return True
+
+    # ۳.۵) وسطِ افزودنِ ادمین ⇒ این متن آیدی/@نام‌کاربری است
+    if action == "add_admin":
+        uid_, name_, err = resolve_user(app, text)
+        from HELPERS.safe_messeger import safe_send_message
+        if err:
+            safe_send_message(uid, "❌ %s\nآیدیِ عددی یا @نام‌کاربری را بفرست "
+                                   "(یا یک پیام از آن کاربر را فوروارد کن)." % err)
+            return True
+        _clear(uid)
+        from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        safe_send_message(uid,
+                          "👤 این کاربر ادمین شود؟\n\n<code>%d</code>%s"
+                          % (uid_, (" — %s" % name_) if name_ else ""),
+                          reply_markup=InlineKeyboardMarkup([[
+                              InlineKeyboardButton("✅ بله، ادمین کن", callback_data="vadmok|%d" % uid_),
+                              InlineKeyboardButton("❌ انصراف", callback_data="vclose")]]))
         return True
 
     # ۴) وسطِ افزودن ⇒ انتظار «نام=مقدار»

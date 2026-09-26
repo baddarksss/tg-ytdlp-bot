@@ -35,14 +35,41 @@ reply_keyboard_msg_ids = {}  # user_id: message_id
 _reply_kb_cleanup_counter = 0
 _REPLY_KB_CLEANUP_INTERVAL = 500  # Clean every 500 calls
 
-def get_main_reply_keyboard(mode="2x3"):
+def _is_admin_user(user_id) -> bool:
+    """آیا این کاربر مالک/ادمینِ ربات است؟ (برای دکمه‌های مدیریتی)"""
+    try:
+        return int(user_id) in set(getattr(Config, "ADMIN", []) or [])
+    except Exception:
+        return False
+
+
+def get_main_reply_keyboard(mode="2x3", user_id=None):
     messages = safe_get_messages(None)
-    """Function for permanent reply-keyboard"""
+    """Function for permanent reply-keyboard.
+
+    ردیفِ «📢 کانال‌ها / 🧩 متغیرها / 🔗 لینکِ فایل» **فقط برای ادمین‌ها** نشان داده
+    می‌شود؛ کاربرِ عادی همان کیبوردِ همیشگیِ خودش را دارد.
+    """
     from pyrogram.types import ReplyKeyboardMarkup
+
     
     # دکمه‌های «کانال‌ها» و «متغیرها»: در هر دو حالتِ کیبورد می‌آیند تا برای باز
     # کردنِ پنل‌ها لازم نباشد دستور تایپ کنی (متنشان از HELPERS/extra_router می‌رود).
-    extra_row = ["📢 کانال‌ها", "🧩 متغیرها", "🔗 لینکِ فایل"]
+    extra_row = (["📢 کانال‌ها", "🧩 متغیرها", "🔗 لینکِ فایل"]
+                 if (user_id is None or _is_admin_user(user_id)) else None)
+    if extra_row is None:
+        if mode == "1x3":
+            return ReplyKeyboardMarkup([["/clean", "/cookie", "/settings"]],
+                                       resize_keyboard=True, one_time_keyboard=False)
+        if mode == "FULL":
+            return ReplyKeyboardMarkup([
+                [messages.CLEAN_EMOJI, messages.COOKIE_EMOJI, messages.SETTINGS_EMOJI, messages.PROXY_EMOJI, messages.IMAGE_EMOJI, messages.SEARCH_EMOJI, messages.ARGS_EMOJI],
+                [messages.VIDEO_EMOJI, messages.USAGE_EMOJI, messages.SPLIT_EMOJI, messages.AUDIO_EMOJI, messages.SUBTITLE_EMOJI, messages.LANGUAGE_EMOJI, messages.NSFW_EMOJI],
+                [messages.TAG_EMOJI, messages.HELP_EMOJI, messages.LIST_EMOJI, messages.PLAY_EMOJI, messages.KEYBOARD_EMOJI, messages.LINK_EMOJI, "🧾"]],
+                resize_keyboard=True, one_time_keyboard=False)
+        return ReplyKeyboardMarkup([["/clean", "/cookie", "/settings"],
+                                    ["/playlist", "/search", "/help"]],
+                                   resize_keyboard=True, one_time_keyboard=False)
     if mode == "1x3":
         keyboard = [
             ["/clean", "/cookie", "/settings"],
@@ -88,7 +115,7 @@ def send_reply_keyboard_always(user_id, mode="2x3"):
                 # استفاده می‌کنیم — وگرنه کیبورد همیشه نسخهٔ اولش می‌ماند و آپدیت نمی‌شود.
                 from HELPERS.safe_messeger import run_pyrogram_client_coroutine
                 run_pyrogram_client_coroutine(app, app.edit_message_text(
-                    user_id, msg_id, "\u2063", reply_markup=get_main_reply_keyboard(mode)))
+                    user_id, msg_id, "\u2063", reply_markup=get_main_reply_keyboard(mode, user_id)))
                 return
             except Exception as e:
                 # Log only if the error is not MESSAGE_ID_INVALID
@@ -97,7 +124,7 @@ def send_reply_keyboard_always(user_id, mode="2x3"):
                 # If it didn't work, we delete the id to avoid getting stuck
                 reply_keyboard_msg_ids.pop(user_id, None)
         # Always after failure or if there is no id - send a new one
-        msg = safe_send_message(user_id, "\u2063", reply_markup=get_main_reply_keyboard(mode))
+        msg = safe_send_message(user_id, "\u2063", reply_markup=get_main_reply_keyboard(mode, user_id))
         # If sending failed (e.g., FloodWait), don't try to access msg.id
         if not msg or not hasattr(msg, "id"):
             return
