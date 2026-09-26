@@ -187,9 +187,13 @@ def chbackup_callback(app, cq):
     if value:
         with contextlib.suppress(Exception):
             import io
-            app.send_document(uid, io.BytesIO(value.encode("utf-8")),
-                              file_name="COPY_CHANNEL_ID.txt",
-                              caption="مقدارِ متغیرِ COPY_CHANNEL_ID")
+            # در این پروژه هندلرهای سینک در ترد اجرا می‌شوند ⇒ متدِ async کلاینت را
+            # باید از راهِ run_pyrogram_client_coroutine صدا زد (وگرنه کوروتین اجرا نمی‌شود).
+            from HELPERS.safe_messeger import run_pyrogram_client_coroutine
+            run_pyrogram_client_coroutine(app, app.send_document(
+                uid, io.BytesIO(value.encode("utf-8")),
+                file_name="COPY_CHANNEL_ID.txt",
+                caption="مقدارِ متغیرِ COPY_CHANNEL_ID"))
     cq.answer("بکاپ فرستاده شد ✅")
     return True
 
