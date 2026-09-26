@@ -63,6 +63,43 @@ def _copy_film_to_channel(sent_msg, user_id: int) -> None:
         logger.error(f"copy_channel: unexpected error: {e}")
 
 
+def _ask_channel_for_film(sent_msg, user_id: int) -> None:
+    """بعد از آپلود: دکمه‌های کانال را زیرِ فیلم می‌گذارد (یا خودکار کپی می‌کند).
+
+    • COPY_CHANNEL_ASK=1 (پیش‌فرض): زیرِ فیلم دکمهٔ هر کانالی می‌آید که ربات در آن
+      ادمین است؛ هر کدام را بزنی همان فیلم به آن کانال می‌رود (کپیِ تمیز، بی‌برچسب).
+    • COPY_CHANNEL_ASK=0: مثل قبل، بی‌سؤال در اولین کانال کپی می‌شود.
+    • هیچ کانالی تنظیم نشده باشد ⇒ هیچ اتفاقی نمی‌افتد.
+    """
+    try:
+        from HELPERS import channel_store as cs
+        if not (getattr(sent_msg, "video", None) or getattr(sent_msg, "document", None)):
+            return
+        if not cs.channels():
+            return
+        if not cs.ask_enabled():
+            _copy_film_to_channel(sent_msg, user_id)
+            return
+        # فقط کانال‌هایی که ربات در آن‌ها ادمین است دکمه می‌گیرند
+        app_ = get_app()
+        ready = []
+        for ch in cs.channels():
+            ok, title, _err = cs.bot_can_post(app_, ch["key"])
+            if ok:
+                ready.append(ch["key"])
+            else:
+                logger.warning(f"channel_ask: skipping {ch['key']} (bot is not admin)")
+        if not ready:
+            logger.warning("channel_ask: no channel where the bot can post — buttons skipped")
+            return
+        kb = cs.film_keyboard()
+        app_.edit_message_reply_markup(user_id, getattr(sent_msg, "id", 0), reply_markup=kb)
+        logger.info(f"channel_ask: channel buttons attached to film {sent_msg.id} "
+                    f"({len(ready)} channel(s))")
+    except Exception as e:
+        logger.error(f"channel_ask: unexpected error: {e}")
+
+
 # Sentinel returned by send_videos when a single video was split into multiple
 # parts and sent successfully. A truthy value distinguishes "split success" from
 # a genuine failure (which returns None), preventing a misleading
@@ -1369,8 +1406,8 @@ def send_videos(
                 # not alarm the user or pollute the LOG_EXCEPTION channel:
                 # log a warning and continue the workflow (issue #447).
                 logger.warning(safe_get_messages(user_id).SENDER_ERROR_SENDING_FULL_DESCRIPTION_FILE_MSG.format(error=e))
-        # کپیِ تمیزِ فیلم در کانال (اگر COPY_CHANNEL_ID ست شده باشد)
-        _copy_film_to_channel(video_msg, user_id)
+        # کانال‌های مقصد: پرسیدن (دکمه زیرِ فیلم) یا کپیِ خودکار
+        _ask_channel_for_film(video_msg, user_id)
         return video_msg
     finally:
         # Remove ASCII-safe hardlink if it was created

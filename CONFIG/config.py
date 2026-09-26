@@ -85,6 +85,9 @@ class Config(_Base):
     # کانالِ مقصدِ «کپیِ تمیزِ فیلم» — مثلا -1001234567890 یا @mychannel
     # 0 / خالی = خاموش. ربات باید در آن کانال ادمین (اجازهٔ پست) باشد.
     COPY_CHANNEL_ID = ev.s("COPY_CHANNEL_ID", "")
+    # True (پیش‌فرض) = بعد از آپلود، دکمه‌های کانال زیرِ فیلم می‌آید تا خودت انتخاب کنی
+    # False = بدون پرسیدن، مستقیم در اولین کانال کپی می‌شود
+    COPY_CHANNEL_ASK = ev.b("COPY_CHANNEL_ASK", True)
     SUBSCRIBE_CHANNEL_URL = ev.opt("SUBSCRIBE_CHANNEL_URL", _Base.SUBSCRIBE_CHANNEL_URL)
     CHANNEL_GUARD_SESSION_STRING = ev.opt(
         "CHANNEL_GUARD_SESSION_STRING", _Base.CHANNEL_GUARD_SESSION_STRING
