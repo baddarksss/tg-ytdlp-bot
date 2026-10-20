@@ -557,7 +557,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                     "👈 کمی صبر کن تا فایل‌های قبلی پاک شوند، یا فایلِ کوچک‌تری بفرست."
                     % (hsize(total_remote) if total_remote else "نامعلوم",
                        humanbytes(_du.get("free", 0)), humanbytes(_du.get("total", 0))),
-                    message=message, parse_mode="html")
+                    message=message, parse_mode=enums.ParseMode.HTML)
                 logger.warning("[DIRECT] aborted: not enough disk for %s (free=%s)",
                                hsize(total_remote) if total_remote else "?",
                                humanbytes(_du.get("free", 0)))
@@ -587,7 +587,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
 
         proc = safe_send_message(user_id, _progress_text(name, pos, total_remote, time.time(),
                                                         note="شروع دانلودِ لینکِ مستقیم…"),
-                                 message=message, parse_mode="html",
+                                 message=message, parse_mode=enums.ParseMode.HTML,
                                  reply_markup=keyboard(user_id))
         msg_id = getattr(proc, "id", None)
         register_controls(user_id, kind="direct", url=url, message_id=msg_id)
@@ -617,7 +617,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                                                               note=("📁 کپیِ محلی (فایلِ خودِ ربات)"
                                                                     + (" · لینک منقضی بود ولی فایل هنوز بود"
                                                                        if (_self_rec or {}).get("expired") else ""))),
-                                               parse_mode="html", reply_markup=keyboard(user_id))
+                                               parse_mode=enums.ParseMode.HTML, reply_markup=keyboard(user_id))
                     if written > max_bytes:
                         raise _TooBig(f"حجم از سقفِ {getattr(LimitsConfig, 'MAX_FILE_SIZE_GB', 2)}GB گذشت")
             done = True
@@ -680,7 +680,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                                     user_id, msg_id,
                                     _progress_text(name, written, total, started,
                                                    note=("🔗 از سرورِ محلیِ خودِ ربات" if _from_local else "")),
-                                    parse_mode="html", reply_markup=keyboard(user_id))
+                                    parse_mode=enums.ParseMode.HTML, reply_markup=keyboard(user_id))
                             if written > max_bytes:
                                 raise _TooBig(f"حجم از سقفِ {getattr(LimitsConfig, 'MAX_FILE_SIZE_GB', 2)}GB گذشت")
                     r.close()
@@ -709,9 +709,9 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
         logger.info(f"[DIRECT] HTTP {exc.status} for {user_id}: {url[:80]} | body={exc.body[:120]!r}")
         try:
             if msg_id:
-                safe_edit_message_text(user_id, msg_id, _txt, parse_mode="html", reply_markup=None)
+                safe_edit_message_text(user_id, msg_id, _txt, parse_mode=enums.ParseMode.HTML, reply_markup=None)
             else:
-                safe_send_message(user_id, _txt, parse_mode="html", message=message)
+                safe_send_message(user_id, _txt, parse_mode=enums.ParseMode.HTML, message=message)
         except Exception:
             pass
         try:
@@ -756,11 +756,11 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                     safe_edit_message_text(user_id, msg_id,
                                            f"❌ دانلود نشد — سرور گفت <code>{html.escape(_http_msg)}</code>\n"
                                            f"{_hint}",
-                                           parse_mode="html", reply_markup=None)
+                                           parse_mode=enums.ParseMode.HTML, reply_markup=None)
                 else:
                     safe_send_message(user_id,
                                       f"❌ دانلود نشد — سرور گفت <code>{html.escape(_http_msg)}</code>\n{_hint}",
-                                      parse_mode="html", message=message)
+                                      parse_mode=enums.ParseMode.HTML, message=message)
             except Exception:
                 pass
             try:
@@ -782,7 +782,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                 safe_edit_message_text(user_id, msg_id,
                                        f"⚠️ دانلود ناتمام ماند (<i>{html.escape(str(exc))[:120]}</i>) — "
                                        f"با دکمهٔ زیر از همان‌جا ادامه بده.",
-                                       parse_mode="html", reply_markup=keyboard(user_id))
+                                       parse_mode=enums.ParseMode.HTML, reply_markup=keyboard(user_id))
         except Exception:
             pass
         return False
@@ -812,7 +812,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                                            _progress_text(target_name, 0, 0, time.time(),
                                                           note="🔧 تبدیلِ کانتینرِ MPEG-TS به MP4 "
                                                                "(بدونِ افتِ کیفیت)…"),
-                                           parse_mode="html", reply_markup=keyboard(user_id))
+                                           parse_mode=enums.ParseMode.HTML, reply_markup=keyboard(user_id))
             except Exception:
                 pass
             try:
@@ -836,7 +836,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
             safe_edit_message_text(user_id, msg_id,
                                    _progress_text(upload_name, size, size, started,
                                                   note="⬆️ آپلود به تلگرام…"),
-                                   parse_mode="html", reply_markup=keyboard(user_id))
+                                   parse_mode=enums.ParseMode.HTML, reply_markup=keyboard(user_id))
         from HELPERS.download_status import progress_bar
         from HELPERS.upload_guard import timed_upload
         ext = _ext(upload_name)
@@ -924,7 +924,7 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
             if msg_id:
                 safe_edit_message_text(user_id, msg_id,
                                        f"✅ <b>{html.escape(upload_name)}</b>\n📦 {hsize(size)} — ارسال شد.",
-                                       parse_mode="html", reply_markup=None)
+                                       parse_mode=enums.ParseMode.HTML, reply_markup=None)
         except Exception:
             pass
         for leftover in {target_path, upload_path} - {None, ""}:
@@ -1006,7 +1006,7 @@ def ask_direct_confirmation(app, message, url: str, user_id: int, reason: str = 
     lines += ["", "دانلودش شروع شود؟"]
     try:
         safe_send_message(user_id, "\n".join(lines), reply_markup=kb, message=message,
-                           parse_mode="html")
+                           parse_mode=enums.ParseMode.HTML)
     except Exception as e:
         logger.warning(f"[DIRECT] confirmation message failed: {e}")
     return True
@@ -1052,7 +1052,7 @@ def _register_confirm_handler() -> bool:
     """ثبتِ هندلرِ دکمه‌های تأیید (مثلِ download_controls: مستقیم روی app
     اگر آماده باشد، وگرنه از رجیستریِ هندلرها)."""
     try:
-        from pyrogram import filters
+        from pyrogram import filters, enums
     except Exception:
         return False
     try:

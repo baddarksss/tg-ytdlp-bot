@@ -23,7 +23,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, Optional
 
-from pyrogram import filters
+from pyrogram import filters, enums
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from HELPERS.app_instance import get_app
@@ -263,7 +263,7 @@ def offer_resume(user_id: int, message=None, restarter: Optional[Callable] = Non
         text = TXT_RESUME_OFFER
         if reason:
             text += f"\n\n<i>{reason[:200]}</i>"
-        safe_send_message(user_id, text, parse_mode="html", message=message,
+        safe_send_message(user_id, text, parse_mode=enums.ParseMode.HTML, message=message,
                           reply_markup=keyboard(user_id, include_cancel=True, include_resume=True))
         logger.info(f"[DLCTL] resume offer sent to {user_id} (kind={kind})")
         return True
