@@ -1794,7 +1794,39 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
             
             # Add PO token provider for YouTube domains
             ytdl_opts = add_pot_to_ytdl_opts(ytdl_opts, url)
-            
+
+            # ── v82: لینک مستقیم (direct link) ────────────────────────────────
+            # برای سایت‌هایی که yt-dlp پشتیبانی نمی‌کند، صفحه را می‌خوانیم و
+            # لینک واقعی فایل را می‌سازیم (mediafire, pixeldrain, gofile, ...).
+            # Referer هم ست می‌شود چون خیلی از این هاست‌ها بدون آن فایل
+            # نمی‌دهند.
+            direct_file_name = ''
+            try:
+                from CONFIG.config import Config as _Cfg
+                if getattr(_Cfg, 'DIRECT_LINK_FALLBACK', True):
+                    from URL_PARSERS.direct_link_generator import (
+                        direct_link_generator, supports_direct_link,
+                        direct_link_filename, DirectDownloadLinkException)
+                    if supports_direct_link(url):
+                        logger.info(f"Resolving direct link for {url}")
+                        _dl = direct_link_generator(url)
+                        _dl_headers = None
+                        if isinstance(_dl, tuple):
+                            _dl, _dl_headers = _dl
+                        if _dl and _dl != url:
+                            _referer = url
+                            url = _dl
+                            direct_file_name = direct_link_filename(url)
+                            _hdrs = dict(_dl_headers or {})
+                            _hdrs.setdefault('Referer', _referer)
+                            ytdl_opts['http_headers'] = _hdrs
+                            logger.info(f"Direct link resolved -> {str(_dl)[:160]}"
+                                        + (f" (file: {direct_file_name})" if direct_file_name else ""))
+            except DirectDownloadLinkException as _dle:
+                logger.info(f"Direct link not available: {str(_dle)[:160]}")
+            except Exception as _dle2:
+                logger.warning(f"Direct link resolver failed: {str(_dle2)[:160]}")
+
             # If MKV is ON, remux to mkv; else to mp4
             # Ensure merge_output_format is also set correctly
             if mkv_on:
@@ -1926,6 +1958,19 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                             logger.info("yt-dlp instance created, starting extract_info...")
                             info_dict = ydl.extract_info(url, download=False)
                             logger.info("extract_info completed successfully")
+                            # v82: keep the real file name for a resolved
+                            # direct link (the generic extractor loses it)
+                            if direct_file_name and isinstance(info_dict, dict):
+                                try:
+                                    import os as _os
+                                    _stem, _ext = _os.path.splitext(direct_file_name)
+                                    info_dict['title'] = _stem or info_dict.get('title')
+                                    if _ext:
+                                        info_dict['ext'] = _ext.lstrip('.')
+                                    info_dict['id'] = _stem or info_dict.get('id')
+                                    info_dict['filename'] = direct_file_name
+                                except Exception:
+                                    pass
                             return info_dict
                     except Exception as e:
                         error_text = str(e)

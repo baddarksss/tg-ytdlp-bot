@@ -131,6 +131,14 @@ class Config(_Base):
     PROXY_2_PASSWORD = ev.s("PROXY_2_PASSWORD", _Base.PROXY_2_PASSWORD)
     PROXY_SELECT = ev.s("PROXY_SELECT", _Base.PROXY_SELECT)
 
+    # ── لینک مستقیم (direct link) ────────────────────────────────────────────
+    # کلید API برای filelions / streamwish (اختیاری). اگر خالی باشد، این دو
+    # سایت در لینک‌ساز پشتیبانی نمی‌شوند.
+    FILELION_API = ev.s("FILELION_API", "")
+    STREAMWISH_API = ev.s("STREAMWISH_API", "")
+    # True = وقتی yt-dlp لینک را پشتیبانی نمی‌کند، خودکار لینک مستقیم ساخته شود
+    DIRECT_LINK_FALLBACK = ev.b("DIRECT_LINK_FALLBACK", True)
+
     # ── PO Token یوتیوب (bgutil) ────────────────────────────────────────────
     # روی Railway پیش‌فرض «خاموش» است؛ برای روشن‌کردن: YOUTUBE_POT_ENABLED=true
     YOUTUBE_POT_ENABLED = ev.b("YOUTUBE_POT_ENABLED", False)

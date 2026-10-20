@@ -38,3 +38,7 @@ gallery-dl
 #pyrotgfork
 
 #apt-get install sshpass
+
+# ── لینک مستقیم (direct link resolver) ─────────────────────────────
+cloudscraper
+lxml

@@ -408,6 +408,39 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
     # Как в down_and_up: явный Node, иначе user_args могут подставить deno/none и format-check даст FORMAT_NOT_AVAILABLE
     ytdl_opts['js_runtimes'] = {'node': {}}
 
+    # ── v82: لینک مستقیم (direct link) ────────────────────────────────────────
+    # yt-dlp اکثر سایت‌های هاست فایل را نمی‌شناسد. برای ~۴۰ هاست معروف
+    # (mediafire, pixeldrain, gofile, 1fichier, terabox, streamtape, send.cm,
+    #  linkbox, gdtot, ...) صفحه را می‌خوانیم و لینک واقعی فایل را درمی‌آوریم.
+    # این کار قبل از استخراج انجام می‌شود تا یک بار تلاش بیهوده‌ی yt-dlp
+    # نداشته باشیم (و Referer هم درست ست می‌شود).
+    direct_file_name = ''
+    try:
+        from CONFIG.config import Config as _Cfg
+        if getattr(_Cfg, 'DIRECT_LINK_FALLBACK', True):
+            from URL_PARSERS.direct_link_generator import (
+                direct_link_generator, supports_direct_link,
+                direct_link_filename, DirectDownloadLinkException)
+            if supports_direct_link(url):
+                logger.info(f"Resolving direct link for {url}")
+                _dl = direct_link_generator(url)
+                _dl_headers = None
+                if isinstance(_dl, tuple):
+                    _dl, _dl_headers = _dl
+                if _dl and _dl != url:
+                    _referer = url
+                    url = _dl
+                    direct_file_name = direct_link_filename(url)
+                    _hdrs = dict(_dl_headers or {})
+                    _hdrs.setdefault('Referer', _referer)
+                    ytdl_opts['http_headers'] = _hdrs
+                    logger.info(f"Direct link resolved -> {str(_dl)[:160]}"
+                                + (f" (file: {direct_file_name})" if direct_file_name else ""))
+    except DirectDownloadLinkException as _dle:
+        logger.info(f"Direct link not available: {str(_dle)[:160]}")
+    except Exception as _dle2:
+        logger.warning(f"Direct link resolver failed: {str(_dle2)[:160]}")
+
     # Try with proxy fallback if user proxy is enabled
     def extract_info_operation(opts):
         try:
@@ -417,6 +450,23 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
             
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+
+            # v82: for a resolved direct link yt-dlp's generic extractor
+            # usually loses the file name (the CDN redirect has an opaque
+            # path) -> the file would be named "<uuid>.unknown_video".
+            # Put the real name back.
+            if direct_file_name and isinstance(info, dict):
+                try:
+                    import os as _os
+                    _stem, _ext = _os.path.splitext(direct_file_name)
+                    info['title'] = _stem or info.get('title')
+                    if _ext:
+                        info['ext'] = _ext.lstrip('.')
+                    info['id'] = _stem or info.get('id')
+                    info['filename'] = direct_file_name
+                    logger.info(f"Direct link file name set to: {direct_file_name}")
+                except Exception:
+                    pass
             
             logger.info(f"✅ [DEBUG] extract_info_operation: извлечение завершено")
             logger.info(f"   info type: {type(info)}")
