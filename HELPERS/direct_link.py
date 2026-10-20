@@ -203,13 +203,19 @@ def is_media_file_url(url: str) -> bool:
 
 
 def _filelink_parts(url: str):
-    """(token, name) اگر مسیرِ لینک شبیهِ ‎/d/<token>[/name]‎ باشد، وگرنه None."""
+    """(token, name) اگر مسیرِ لینک شبیهِ ‎/d/<token>[/name]‎ باشد، وگرنه None.
+
+    v82: لینکِ عمومی ممکن است زیرِ یک پیشوندِ مسیر باشد (مثلاً ‎/f/d/<token>``
+    وقتی وب‌سرور روی یک زیرپوشه‌ی دامنه سرو می‌شود) ⇒ دنبالِ بخشِ «d»
+    در هر جای مسیر می‌گردیم، نه فقط اولِ مسیر.
+    """
     try:
         parts = [p for p in (urllib.parse.urlparse(url).path or "").split("/") if p]
     except Exception:
         return None
-    if len(parts) >= 2 and parts[0] == "d":
-        return parts[1], (parts[2] if len(parts) > 2 else "")
+    for i, p in enumerate(parts):
+        if p == "d" and i + 1 < len(parts):
+            return parts[i + 1], (parts[i + 2] if len(parts) > i + 2 else "")
     return None
 
 
@@ -242,9 +248,15 @@ def self_link_record(url: str):
     try:
         parsed = urllib.parse.urlparse(url)
         parts = [p for p in (parsed.path or "").split("/") if p]
-        if len(parts) < 2 or parts[0] != "d":
+        # v82: the link may live under a path prefix (/f/d/<token>/<name>)
+        idx = -1
+        for i, p in enumerate(parts):
+            if p == "d" and i + 1 < len(parts):
+                idx = i
+                break
+        if idx < 0:
             return None
-        token = parts[1]
+        token = parts[idx + 1]
         from HELPERS import filelink_routes as _fr
         # allow_expired=True ⇒ لینکِ منقضی هم برای «خودِ ربات» قابلِ استفاده است
         # (لینکِ عمومی همان‌طور ۴۰۴ می‌ماند، ولی فایل تا مهلتِ نگه‌داری روی دیسک است)
@@ -773,7 +785,11 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
         from HELPERS.upload_guard import timed_upload
         ext = _ext(upload_name)
         caption = f"{upload_name}\n📦 {hsize(size)}"
-        progress_args = (user_id, msg_id, f"⬆️ {html.escape(upload_name)}") if msg_id else None
+        # v82: progress_args must NEVER be None - pyrogram does `*progress_args`
+        # and None explodes with "Value after * must be an iterable, not
+        # NoneType" (that killed every upload without a progress message).
+        progress_args = ((user_id, msg_id, f"⬆️ {html.escape(upload_name)}")
+                         if msg_id else ())
 
         def _send_video():
             return app.send_video(user_id, upload_path, caption=caption, file_name=upload_name,
@@ -785,8 +801,14 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                                   progress=progress_bar, progress_args=progress_args)
 
         def _send_doc():
+            # v82: this pyrogram build made `force_document` mutually exclusive
+            # with `disable_content_type_detection` (which defaults to True)
+            # -> the old call raised "Parameters `force_document` and
+            # `disable_content_type_detection` are mutually exclusive" and
+            # the file was never sent. `disable_content_type_detection` is the
+            # supported way to force a document.
             return app.send_document(user_id, upload_path, caption=caption, file_name=upload_name,
-                                     force_document=True, progress=progress_bar,
+                                     disable_content_type_detection=True, progress=progress_bar,
                                      progress_args=progress_args)
 
         sent = None
