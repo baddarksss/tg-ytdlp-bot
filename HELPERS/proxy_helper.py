@@ -786,6 +786,55 @@ def is_cloudflare_error(error_text: str) -> bool:
     ]
     return any(indicator in error_lower for indicator in cloudflare_indicators)
 
+
+# ── Generic "the site is blocking us" detector ──────────────────────────────
+# Cloudflare is only ONE of the many interstitials a datacenter IP runs into:
+# age verification pages, bot checks, "access denied" walls, rate limits...
+# All of them have the same cure: a different egress IP (proxy). This
+# detector is deliberately generic (site independent) so the bot can react
+# to a gate it has never seen before.
+_ACCESS_GATE_PATTERNS = (
+    # age / adult interstitials
+    'age verification', 'age-verif', 'verify your age', 'confirm your age',
+    'adult content', 'are you over 18', '18+ only', 'age_restricted',
+    # bot / human checks
+    'bot check', 'are you a robot', 'not a bot', 'verify you are human', 'captcha',
+    'unusual traffic', 'access denied', 'request blocked', 'security check',
+    'enable javascript and cookies to continue', 'press and hold',
+    'checking your browser', 'just a moment', 'ddos-guard', 'perimeterx',
+    'datadome', 'incapsula', 'sucuri', 'akamai bot', 'ray id',
+    # extractor could not find its marker because an interstitial was served
+    'unable to extract hash',
+    # http statuses that mean "we are not welcome here"
+    'http error 403', 'http error 429', 'http error 503',
+    '403 forbidden', '429 too many requests',
+)
+
+
+def is_access_gate_error(error_text: str, url: str = None) -> bool:
+    """True when the failure looks like an anti-bot / age / IP gate.
+
+    Such failures are NOT fixed by a different browser fingerprint - only a
+    different egress IP (proxy) helps, so the bot should switch to the proxy
+    instead of retrying with impersonate.
+    """
+    error_lower = str(error_text or '').lower()
+    if not error_lower:
+        return False
+    u = str(url or '').lower()
+    # YouTube's age gate is a CONTENT restriction, not an IP gate: a proxy
+    # does not help, the bot has its own cookie flow for it.
+    if ('youtube.com' in u or 'youtu.be' in u) and (
+            'age' in error_lower or 'sign in to confirm' in error_lower):
+        return False
+    return any(pattern in error_lower for pattern in _ACCESS_GATE_PATTERNS)
+
+
+def access_gate_hint() -> str:
+    """User facing explanation for an access-gate failure."""
+    return ("The site is blocking this server (bot / age / IP check). "
+            "This link needs a proxy - set PROXY_* in .env or use /proxy.")
+
 def try_with_impersonate_fallback(ytdl_opts: dict, url: str, user_id: int = None, operation_func=None, *args, **kwargs):
     """
     Try operation with different impersonate versions in case of Cloudflare 403 error

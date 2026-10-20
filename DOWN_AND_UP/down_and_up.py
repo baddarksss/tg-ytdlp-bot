@@ -1960,6 +1960,20 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                     last_error_info['error'] = e
                     last_error_info['error_text'] = error_text
 
+                    # v81: generic access gate (age check / bot wall / IP
+                    # block). Cookies and a different browser fingerprint do
+                    # NOT help - only a different egress IP does. Tag the
+                    # error so the user-facing classifier can explain it
+                    # clearly instead of showing the raw extractor error.
+                    try:
+                        from HELPERS.proxy_helper import is_access_gate_error
+                        if is_access_gate_error(error_text, url) and not is_cloudflare_error(error_text):
+                            logger.warning(f"Access gate detected for {url}: {error_text[:200]}")
+                            error_text = f"ACCESS_GATE_BLOCKED: {error_text}"
+                            original_error_text = error_text
+                    except Exception:
+                        pass
+
                     # Permanent / rate-limit yt-dlp errors (e.g. YouTube
                     # "The page needs to be reloaded", "Sign in to confirm")
                     # cannot be fixed by proxy rotation or impersonation.
@@ -2880,6 +2894,11 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                     elif "HTTP Error 401" in error_message:
                         error_code = "HTTP_401_UNAUTHORIZED"
                         error_description = "Authentication required - cookies needed"
+                    elif "ACCESS_GATE_BLOCKED" in error_message:
+                        # v81: the site shows an age/bot/IP gate to this server
+                        error_code = "ACCESS_GATE_BLOCKED"
+                        error_description = ("The site is blocking this server (age / bot / IP check). "
+                                             "This link needs a proxy - set PROXY_* in .env or use /proxy.")
                     elif "Video unavailable" in error_message:
                         error_code = "VIDEO_UNAVAILABLE"
                         error_description = "Video is not available or has been removed"

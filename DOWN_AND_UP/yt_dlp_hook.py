@@ -477,6 +477,20 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
                 logger.warning(f"Permanent unavailable error, no retries for {url}: {error_text[:200]}")
                 return {'error': 'PERMANENT_UNAVAILABLE', 'original_error': error_text}
 
+            # v81: generic access gate (age check / bot wall / IP block).
+            # Cookies and a different browser fingerprint do NOT help here -
+            # only a different egress IP does. So: skip the cookie and the
+            # impersonate storms and let the caller go straight to the proxy
+            # fallback. If no proxy is configured the user gets a clear
+            # "this site blocks the server IP" message instead of the raw
+            # extractor error.
+            from HELPERS.proxy_helper import is_access_gate_error, is_cloudflare_error
+            if is_access_gate_error(error_text, url) and not is_cloudflare_error(error_text):
+                logger.warning(
+                    f"Access gate detected (site blocks this IP), skipping "
+                    f"cookie/impersonate retries for {url}: {error_text[:200]}")
+                return {'error': 'ACCESS_GATE_BLOCKED', 'original_error': error_text, 'url': url}
+
             # Transient network timeout (issue #464): retry once with a longer
             # socket_timeout before any proxy/cookie fallback — the endpoint is
             # usually reachable again immediately after a single read timeout.
@@ -607,7 +621,14 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
         except Exception as e:
             error_text = str(e)
             # Check if it's a Cloudflare error
-            from HELPERS.proxy_helper import is_cloudflare_error, try_with_impersonate_fallback
+            from HELPERS.proxy_helper import is_cloudflare_error, try_with_impersonate_fallback, is_access_gate_error
+            # v81: a generic access gate (age check / bot wall / IP block) is
+            # NOT fixed by a different browser fingerprint - only a different
+            # egress IP helps. Skip the impersonate attempts and go straight
+            # to the proxy fallback, and report it clearly.
+            if is_access_gate_error(error_text, url) and not is_cloudflare_error(error_text):
+                logger.warning(f"Access gate detected for {url}: {error_text[:200]}")
+                return {'error': 'ACCESS_GATE_BLOCKED', 'original_error': error_text, 'url': url}
             if is_cloudflare_error(error_text):
                 logger.info(f"Cloudflare error detected for {url}, trying impersonate fallback")
                 # Try with different impersonate versions
@@ -631,6 +652,21 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
     try:
         result = extract_info_operation(ytdl_opts)
         if result is not None:
+            # v81: the site blocked this IP (age/bot/IP gate). Cookies and a
+            # different fingerprint do not help - only a different egress IP
+            # does. So try the proxy before reporting the failure.
+            if isinstance(result, dict) and result.get('error') == 'ACCESS_GATE_BLOCKED':
+                logger.info(f"Access gate for {url}, trying proxy fallback before giving up")
+                gate_result = try_with_proxy_fallback(ytdl_opts, url, user_id, extract_info_operation)
+                if gate_result is not None and not (
+                        isinstance(gate_result, dict)
+                        and gate_result.get('error') == 'ACCESS_GATE_BLOCKED'):
+                    return gate_result
+                return {
+                    'error': 'ACCESS_GATE_BLOCKED',
+                    'original_error': result.get('original_error', ''),
+                    'url': url,
+                }
             return result
     except yt_dlp.utils.DownloadError as e:
         error_text = str(e)
