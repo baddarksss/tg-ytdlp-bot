@@ -258,12 +258,53 @@ def flmk_callback(app, cq):
     # فایل‌های بزرگ چند دقیقه‌ای طول می‌کشند ⇒ همان پیام را ⏳ می‌کنیم و بعد لینک می‌گذاریم
     with contextlib.suppress(Exception):
         safe_edit_message_text(uid, cq.message.id,
-                               "⏳ دارم فایل (<b>%s</b>) را از تلگرام می‌گیرم…"
-                               % fl.human_size(size))
+                               "⏳ <b>مرحله ۱ از ۳</b> — دریافتِ فایل از تلگرام\n"
+                               "📥 <b>%s</b> · %s\n"
+                               "<i>درصد، سرعت و زمانِ باقی‌مانده همین‌جا زنده می‌شود…</i>"
+                               % (name, fl.human_size(size)))
     tmp = os.path.join(fl.links_dir(), "tmp_%s_%s" % (secrets.token_hex(4), name))
+
+    # ── v82: پیشرفتِ زندهٔ دانلود از تلگرام ────────────────────────────────
+    # قبلاً فقط یک پیامِ ثابت («در حال دانلود از تلگرام») دیده می‌شد و کاربر
+    # نمی‌دانست چقدر مانده. حالا درصد + سرعت + ETA + شمارهٔ مرحله نمایش داده
+    # می‌شود (و هر ۲ ثانیه آپدیت می‌شود تا به سقفِ flood نخوریم).
+    _pg = {"t0": time.time(), "last": 0.0}
+
+    def _tg_progress(current, total):
+        try:
+            now = time.time()
+            if now - _pg["last"] < 2.0:
+                return
+            _pg["last"] = now
+            total_i = int(total or 0)
+            cur_i = int(current or 0)
+            elapsed = max(0.001, now - _pg["t0"])
+            speed = cur_i / elapsed
+            pct = (cur_i / total_i * 100) if total_i else 0.0
+            blocks = int(pct // 10)
+            bar = "🟩" * blocks + "⬜️" * (10 - blocks)
+            eta = ""
+            if total_i and speed > 0:
+                eta = "   ⏱ %s" % fl.human((total_i - cur_i) / speed)
+            if total_i:
+                size_txt = "%s / %s" % (fl.human_size(cur_i), fl.human_size(total_i))
+            else:
+                size_txt = fl.human_size(cur_i)
+            text = ("⏳ <b>مرحله ۱ از ۳</b> — دریافتِ فایل از تلگرام\n"
+                    "📥 <b>%s</b>\n"
+                    "%s  %.1f%%\n"
+                    "⬇️ %s   🚀 %s/s%s\n"
+                    "<i>مرحلهٔ بعد: آماده‌سازیِ فایل روی سرور</i>"
+                    % (name, bar, pct, size_txt, fl.human_size(speed), eta))
+            with contextlib.suppress(Exception):
+                safe_edit_message_text(uid, cq.message.id, text)
+        except Exception:
+            pass
+
     try:
-        got = run_pyrogram_client_coroutine(app, app.download_media(msg, file_name=tmp),
-                                            timeout=fl.DOWNLOAD_TIMEOUT)
+        got = run_pyrogram_client_coroutine(
+            app, app.download_media(msg, file_name=tmp, progress=_tg_progress),
+            timeout=fl.DOWNLOAD_TIMEOUT)
         path = got if isinstance(got, str) else tmp
         if not os.path.exists(path) or os.path.getsize(path) == 0:
             raise RuntimeError("file not downloaded")
@@ -276,6 +317,13 @@ def flmk_callback(app, cq):
                           "یک بار دیگر امتحان کن؛ اگر باز هم نشد بگو، راهِ دیگری "
                           "(سرورِ Bot API محلی) می‌گذاریم." % str(e)[:150])
         return True
+    # ── مرحله ۲: آماده‌سازیِ فایل روی سرور ────────────────────────────────
+    with contextlib.suppress(Exception):
+        safe_edit_message_text(uid, cq.message.id,
+                               "⏳ <b>مرحله ۲ از ۳</b> — آماده‌سازیِ فایل روی سرور\n"
+                               "📦 %s · %s\n"
+                               "<i>مرحلهٔ بعد: ساختِ لینکِ مستقیم</i>"
+                               % (name, fl.human_size(size)))
     try:
         rec = fl.add_file(path, name, uid, ttl, message_id=msg_id)
     except fl.DiskFullError as e:
@@ -288,6 +336,10 @@ def flmk_callback(app, cq):
             if os.path.exists(path):
                 os.remove(path)
         return True
+    # ── مرحله ۳: ساختِ لینکِ مستقیم ────────────────────────────────────────
+    with contextlib.suppress(Exception):
+        safe_edit_message_text(uid, cq.message.id,
+                               "⏳ <b>مرحله ۳ از ۳</b> — ساختِ لینکِ مستقیم…")
     with contextlib.suppress(Exception):
         safe_edit_message_text(uid, cq.message.id, _link_text(rec), reply_markup=_link_keyboard(rec["token"]))
     return True
