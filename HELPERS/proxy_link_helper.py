@@ -200,8 +200,12 @@ def get_direct_link_with_proxy(url: str, format_spec: str = "bv+ba/best", user_i
         if user_id:
             import os
             cookie_path = f"users/{user_id}/cookie.txt"
-            if os.path.exists(cookie_path):
-                ydl_opts['cookiefile'] = cookie_path
+            # v81: only a real Netscape cookie file may be handed to yt-dlp,
+            # an empty one aborts the whole download
+            from HELPERS.cookie_helper import usable_cookie_path
+            usable = usable_cookie_path(cookie_path)
+            if usable:
+                ydl_opts['cookiefile'] = usable
         
         # Extract video info
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

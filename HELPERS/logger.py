@@ -13,7 +13,7 @@ try:
 except Exception:
     enums = None
 import re
-from CONFIG.config import Config
+from CONFIG.config import Config, is_placeholder_chat_id
 
 
 def safe_send_message(*args, **kwargs):
@@ -119,13 +119,23 @@ def get_log_channel(kind: str = "general", nsfw: bool = False, paid: bool = Fals
 
 # Send Message to Logger
 
+def _send_to_log_channel(msg_with_id):
+    """Send to the log channel — skipped when the channel id is still one of
+    the sample ids of the default config (Telegram answers "Peer id invalid"
+    and every log line cost 3 retries)."""
+    chat_id = get_log_channel("general")
+    if is_placeholder_chat_id(chat_id):
+        return False
+    safe_send_message(chat_id, msg_with_id, parse_mode=_html_parse_mode())
+    return True
+
+
 def send_to_logger(message, msg):
     _capture_message_context(message)
     user_id = message.chat.id
     msg_with_id = f"{message.chat.first_name} - {user_id}\n \n{msg}"
     # Print (user_id, "-", msg)
-    safe_send_message(get_log_channel("general"), msg_with_id,
-                     parse_mode=_html_parse_mode())
+    _send_to_log_channel(msg_with_id)
 
 # Send Message to User Only
 
@@ -144,7 +154,7 @@ def send_to_all(message, msg, parse_mode=None):
     _capture_message_context(message)
     user_id = message.chat.id
     msg_with_id = f"{message.chat.first_name} - {user_id}\n \n{msg}"
-    safe_send_message(get_log_channel("general"), msg_with_id, parse_mode=_html_parse_mode())
+    _send_to_log_channel(msg_with_id)
     safe_send_message(user_id, msg, parse_mode=parse_mode or _html_parse_mode(), message=message)
 
 # --- Error log throttle/dedup to prevent spam ----------------------------------

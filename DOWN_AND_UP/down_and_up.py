@@ -322,6 +322,32 @@ def determine_need_subs(subs_enabled, found_type, user_id):
 
 #@reply_with_keyboard
 def down_and_up(app, message, url, playlist_name, video_count, video_start_with, tags_text, force_no_title=False, format_override=None, quality_key=None, cookies_already_checked=False, use_proxy=False, cached_video_info=None, clear_subs_cache_on_start=True, download_sections=None):
+    # 🔧 VPS patch: eporner.com — تداخل استخراجِ hash در صفحهٔ /hd-porn/ و /video-<hash>/
+    # (سایت صفحه را عوض کرده و با نسخه‌های فعلی yt-dlp خطای "Unable to extract hash" می‌دهد).
+    # صفحهٔ /embed/<hash>/ بدونِ مشکل استخراج می‌شود ⇒ قبل از پاس‌دادن به yt-dlp
+    # لینک را بازنویسی می‌کنیم (تاثیری روی بقیهٔ سای‌ها ندارد).
+    try:
+        if url and isinstance(url, str):
+            _er = re.search(r"(https?://(?:[A-Za-z0-9-]+\.)?eporner\.com)/(\S*)", url, re.IGNORECASE)
+            if _er:
+                _base, _path = _er.group(1), "/" + _er.group(2)
+                _hash = None
+                _m_hd = re.search(r"/hd-porn[^/]*/([A-Za-z0-9]+)(?:/|\?|$)", _path, re.IGNORECASE)
+                _m_vi = re.search(r"/video-([A-Za-z0-9]+)(?:/|\?|$)", _path, re.IGNORECASE)
+                _m_em = re.search(r"/embed/([A-Za-z0-9]+)(?:/|\?|$)", _path, re.IGNORECASE)
+                if _m_hd:
+                    _hash = _m_hd.group(1)
+                elif _m_vi:
+                    _hash = _m_vi.group(1)
+                elif _m_em:
+                    _hash = _m_em.group(1)  # از قبل фор صحیح است
+                if _hash:
+                    _new = "{}/embed/{}/".format(_base, _hash)
+                    if _new.rstrip("/") != url.rstrip("/"):
+                        logger.info(f"🔧 URL rewrite (eporner): '{url}' -> '{_new}'")
+                        url = _new
+    except Exception:
+        pass
     # ВАЖНО: не сбрасываем источники YouTube‑куки без необходимости.
     # Если пользователь уже получил рабочие куки и мы пришли из Always Ask меню
     # (cookies_already_checked=True), повторный сброс и перебор источников только
@@ -1120,15 +1146,20 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                 'socket_timeout': 60,
             }
             # Try to use cookies from download directory first, then fallback to user root
+            # v81: only a valid Netscape cookie file may be used - an empty one
+            # makes yt-dlp abort the whole download
+            from HELPERS.cookie_helper import usable_cookie_path
             download_cookie_path = os.path.join(user_dir_name, "cookie.txt")
             user_cookie_path = os.path.join("users", str(user_id), "cookie.txt")
             
-            if os.path.exists(download_cookie_path):
-                ydl_opts['cookiefile'] = download_cookie_path
-                logger.info(f"Using cookies from download directory: {download_cookie_path}")
-            elif os.path.exists(user_cookie_path):
-                ydl_opts['cookiefile'] = user_cookie_path
-                logger.info(f"Using cookies from user directory: {user_cookie_path}")
+            usable_download_cookie = usable_cookie_path(download_cookie_path)
+            usable_user_cookie = usable_cookie_path(user_cookie_path)
+            if usable_download_cookie:
+                ydl_opts['cookiefile'] = usable_download_cookie
+                logger.info(f"Using cookies from download directory: {usable_download_cookie}")
+            elif usable_user_cookie:
+                ydl_opts['cookiefile'] = usable_user_cookie
+                logger.info(f"Using cookies from user directory: {usable_user_cookie}")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 pre_info = ydl.extract_info(url, download=False)
             # Normalize to dict and check None
@@ -1640,8 +1671,12 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                 logger.info(f"Using --no-cookies for domain: {url}")
             else:
                 # Check if cookie.txt exists in download directory first, then user's folder
+                # v81: an empty/garbage cookie file makes yt-dlp abort the whole
+                # download ("does not look like a Netscape format cookies file")
+                from HELPERS.cookie_helper import usable_cookie_path
                 download_cookie_path = os.path.join(user_dir_name, "cookie.txt")
                 user_cookie_path = os.path.join("users", str(user_id), "cookie.txt")
+                usable_user_cookie = usable_cookie_path(user_cookie_path)
                 
                 # Для YouTube теперь не устраиваем тяжёлый повторный тест кук перед скачиванием.
                 # Логика такая:
@@ -1649,25 +1684,26 @@ def down_and_up(app, message, url, playlist_name, video_count, video_start_with,
                 #   * если нет — скачивание пойдёт без кук, а при реальной cookie‑ошибке
                 #     перехватится в DownloadError и запустит retry_download_with_different_cookies.
                 if is_youtube_url(url):
-                    if os.path.exists(user_cookie_path):
-                        common_opts['cookiefile'] = user_cookie_path
-                        logger.info(f"[YOUTUBE COOKIES] Using existing user cookie file for download: {user_cookie_path}")
+                    if usable_user_cookie:
+                        common_opts['cookiefile'] = usable_user_cookie
+                        logger.info(f"[YOUTUBE COOKIES] Using existing user cookie file for download: {usable_user_cookie}")
                     else:
                         common_opts['cookiefile'] = None
-                        logger.info(f"[YOUTUBE COOKIES] No user cookie file found for download, starting without cookies")
+                        logger.info(f"[YOUTUBE COOKIES] No usable user cookie file found for download, starting without cookies")
                 else:
                     # For non-YouTube URLs, use new cookie fallback system
                     from COMMANDS.cookies_cmd import get_cookie_cache_result, try_non_youtube_cookie_fallback
                     cache_result = get_cookie_cache_result(user_id, url)
+                    cached_cookie = usable_cookie_path(cache_result['cookie_path']) if (cache_result and cache_result.get('cookie_path')) else None
                     
-                    if cache_result and cache_result['result']:
+                    if cache_result and cache_result['result'] and cached_cookie:
                         # Use cached successful cookies
-                        common_opts['cookiefile'] = cache_result['cookie_path']
+                        common_opts['cookiefile'] = cached_cookie
                         logger.info(f"Using cached cookies for non-YouTube URL: {url}")
                     else:
                         # Try user cookies first
-                        if os.path.exists(user_cookie_path):
-                            common_opts['cookiefile'] = user_cookie_path
+                        if usable_user_cookie:
+                            common_opts['cookiefile'] = usable_user_cookie
                             logger.info(f"Using user cookies for non-YouTube URL: {url}")
                         else:
                             # No user cookies, will try fallback during download

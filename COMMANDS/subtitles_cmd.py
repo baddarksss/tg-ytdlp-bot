@@ -921,12 +921,18 @@ def get_available_subs_languages(url, user_id=None, auto_only=False):
             'socket_timeout': 60,
         }
         # cookies
+        # v81: only a valid Netscape cookie file is handed to yt-dlp - an
+        # empty file aborts the whole request with a cryptic error
+        from HELPERS.cookie_helper import usable_cookie_path
         if user_id:
             cf = os.path.join("users", str(user_id), "cookie.txt")
-            if os.path.exists(cf):
-                base_opts['cookiefile'] = cf
-        elif hasattr(Config, "COOKIE_FILE_PATH") and os.path.exists(Config.COOKIE_FILE_PATH):
-            base_opts['cookiefile'] = Config.COOKIE_FILE_PATH
+            usable = usable_cookie_path(cf)
+            if usable:
+                base_opts['cookiefile'] = usable
+        elif hasattr(Config, "COOKIE_FILE_PATH"):
+            usable_global = usable_cookie_path(Config.COOKIE_FILE_PATH)
+            if usable_global:
+                base_opts['cookiefile'] = usable_global
 
         last_info, used_client = {}, None
         for client in ('tv', None):  # Only try tv client since it always works

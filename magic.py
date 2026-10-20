@@ -38,6 +38,15 @@ from pyrogram.types import (
 ###########################################################
 # CONFIG
 from CONFIG.config import Config
+
+# v81: global guard — yt-dlp treats a malformed cookiefile as a fatal error
+# ("does not look like a Netscape format cookies file"), so an empty cookie
+# file used to kill every download. The guard strips unusable cookie files
+# from every YoutubeDL call (current and future).
+try:
+    import HELPERS.yt_dlp_guard  # noqa: F401
+except Exception as e:  # pragma: no cover
+    print(f"⚠️  yt-dlp cookie guard failed to load: {e}")
 from CONFIG.limits import LimitsConfig
 from CONFIG.messages import Messages, safe_get_messages
 

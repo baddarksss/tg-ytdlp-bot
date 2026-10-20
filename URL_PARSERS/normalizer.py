@@ -4,6 +4,40 @@ from URL_PARSERS.tiktok import get_clean_url_for_tagging
 from HELPERS.logger import logger
 from CONFIG.config import Config
 
+def normalize_eporner_url(url: str) -> str:
+    """🔧 VPS patch: yt-dlp نمی‌تواند hash را از صفحهٔ اصلی eporner استخراج کند
+    ("Unable to extract hash" — با هر نسخهٔ yt-dlp و هر شبکه رخ می‌دهد) ولی
+    فرمت /embed/<hash>/ روی همان نسخه سالم استخراج می‌شود.
+    هر فرمتِ لینک eporner را به فرمت embed بازنویسی می‌کند:
+      • /hd-porn/<hash>/…    → /embed/<hash>/
+      • /video-<hash>/<slug>/ → /embed/<hash>/
+      • /embed/<hash>/         → بدون تغییر
+    """
+    try:
+        if not url or not isinstance(url, str):
+            return url
+        if "eporner.com" not in url.lower():
+            return url
+        _er = re.search(r"(https?://(?:[A-Za-z0-9-]+\.)?eporner\.com)/(\S*)", url, re.IGNORECASE)
+        if not _er:
+            return url
+        base, raw_path = _er.group(1), "/" + _er.group(2)
+        _m = (
+            re.search(r"/hd-porn[^/\s]*/([A-Za-z0-9_-]+)(?:/|\?|#|$)", raw_path, re.IGNORECASE)
+            or re.search(r"/video-([A-Za-z0-9_-]+)(?:/|\?|#|$)", raw_path, re.IGNORECASE)
+            or re.search(r"/embed/([A-Za-z0-9_-]+)(?:/|\?|#|$)", raw_path, re.IGNORECASE)
+        )
+        if not _m:
+            return url
+        new_url = "{}/embed/{}/".format(base, _m.group(1))
+        if new_url.rstrip("/") == url.rstrip("/"):
+            return url
+        logger.info(f"🔧 URL rewrite (eporner): '{url}' -> '{new_url}'")
+        return new_url
+    except Exception:
+        return url
+
+
 def normalize_url_for_cache(url: str) -> str:
     """
     Normalizes URLs for caching based on a set of specific rules,

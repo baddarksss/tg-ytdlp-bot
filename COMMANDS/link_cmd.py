@@ -92,40 +92,54 @@ def get_direct_link(url, user_id, quality_arg=None, cookies_already_checked=Fals
         # Cookie setup
         user_dir = os.path.join("users", str(user_id))
         user_cookie_path = os.path.join(user_dir, "cookie.txt")
+        # v81: an EMPTY or malformed cookie file makes yt-dlp abort the whole
+        # download ("does not look like a Netscape format cookies file"),
+        # so only a real cookie file is ever handed over
+        from HELPERS.cookie_helper import usable_cookie_path, describe_cookie_problem
+        usable_user_cookie = usable_cookie_path(user_cookie_path)
         
         # For YouTube URL check cookies
         if is_youtube_url(url) and not cookies_already_checked:
             has_working_cookies = ensure_working_youtube_cookies(user_id)
-            if has_working_cookies and os.path.exists(user_cookie_path):
-                ytdl_opts['cookiefile'] = user_cookie_path
+            if has_working_cookies and usable_user_cookie:
+                ytdl_opts['cookiefile'] = usable_user_cookie
                 logger.info(safe_get_messages(user_id).LINK_USING_WORKING_YOUTUBE_COOKIES_MSG.format(user_id=user_id))
             else:
                 ytdl_opts['cookiefile'] = None
+                if os.path.exists(user_cookie_path):
+                    logger.warning(f"Skipping user cookie for {user_id}: {describe_cookie_problem(user_cookie_path)}")
                 logger.info(safe_get_messages(user_id).LINK_NO_WORKING_YOUTUBE_COOKIES_MSG.format(user_id=user_id))
         elif is_youtube_url(url) and cookies_already_checked:
-            if os.path.exists(user_cookie_path):
-                ytdl_opts['cookiefile'] = user_cookie_path
+            if usable_user_cookie:
+                ytdl_opts['cookiefile'] = usable_user_cookie
                 logger.info(safe_get_messages(user_id).LINK_USING_EXISTING_YOUTUBE_COOKIES_MSG.format(user_id=user_id))
             else:
                 ytdl_opts['cookiefile'] = None
+                if os.path.exists(user_cookie_path):
+                    logger.warning(f"Skipping user cookie for {user_id}: {describe_cookie_problem(user_cookie_path)}")
                 logger.info(safe_get_messages(user_id).LINK_NO_YOUTUBE_COOKIES_FOUND_MSG.format(user_id=user_id))
         else:
             # For non-YouTube URL use existing logic
-            if os.path.exists(user_cookie_path):
-                ytdl_opts['cookiefile'] = user_cookie_path
+            if usable_user_cookie:
+                ytdl_opts['cookiefile'] = usable_user_cookie
             else:
+                if os.path.exists(user_cookie_path):
+                    logger.warning(f"Skipping user cookie for {user_id}: {describe_cookie_problem(user_cookie_path)}")
                 global_cookie_path = Config.COOKIE_FILE_PATH
-                if os.path.exists(global_cookie_path):
+                usable_global_cookie = usable_cookie_path(global_cookie_path)
+                if usable_global_cookie:
                     try:
                         create_directory(user_dir)
                         import shutil
-                        shutil.copy2(global_cookie_path, user_cookie_path)
+                        shutil.copy2(usable_global_cookie, user_cookie_path)
                         ytdl_opts['cookiefile'] = user_cookie_path
                         logger.info(safe_get_messages(user_id).LINK_COPIED_GLOBAL_COOKIE_FILE_MSG.format(user_id=user_id))
                     except Exception as e:
                         logger.error(f"{LoggerMsg.LINK_FAILED_COPY_GLOBAL_COOKIE_LOG_MSG}")
                         ytdl_opts['cookiefile'] = None
                 else:
+                    if os.path.exists(global_cookie_path):
+                        logger.warning(f"Skipping global cookie: {describe_cookie_problem(global_cookie_path)}")
                     ytdl_opts['cookiefile'] = None
         
         # Check if we need to use --no-cookies for this domain

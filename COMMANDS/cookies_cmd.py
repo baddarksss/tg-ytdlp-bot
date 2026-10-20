@@ -25,6 +25,9 @@ import yt_dlp
 import random
 from HELPERS.pot_helper import add_pot_to_ytdl_opts
 from HELPERS.proxy_helper import add_proxy_to_ytdl_opts
+# v81: shared cookie-file sanity check (an empty/garbage cookie file makes
+# yt-dlp abort the whole download)
+from HELPERS.cookie_helper import usable_cookie_path, describe_cookie_problem
 from URL_PARSERS.youtube import is_youtube_url
 # Get app instance for decorators
 app = get_app()
@@ -1391,6 +1394,11 @@ def test_youtube_cookies_on_url(cookie_file_path: str, url: str, user_id: int | 
         bool: True если куки работают на этом URL, False если нет
     """
     try:
+        # v81: an empty/garbage cookie file makes yt-dlp raise
+        # "does not look like a Netscape format cookies file" - the test
+        # would then fail for the wrong reason. Skip the cookiefile instead.
+        from HELPERS.cookie_helper import usable_cookie_path
+        usable_cookie = usable_cookie_path(cookie_file_path)
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -1399,7 +1407,7 @@ def test_youtube_cookies_on_url(cookie_file_path: str, url: str, user_id: int | 
             # Не указываем format, чтобы избежать "Requested format is not available"
             # Нас интересует только возможность извлечь info с активными куками.
             'ignore_no_formats_error': True,
-            'cookiefile': cookie_file_path,
+            'cookiefile': usable_cookie,
             'extractor_args': {
                 'youtube': {'player_client': ['tv']}
             },
@@ -1483,7 +1491,7 @@ def test_youtube_cookies(cookie_file_path: str, user_id: int | None = None) -> b
             # Don't specify format to avoid "Requested format is not available" errors
             # We only need to check if info can be extracted, not if formats can be processed
             'ignore_no_formats_error': True,  # Ignore format errors - we only check if info is extractable
-            'cookiefile': cookie_file_path,
+            'cookiefile': usable_cookie_path(cookie_file_path),
             'extractor_args': {
                 'youtube': {'player_client': ['tv']}
             },
@@ -1616,7 +1624,7 @@ def test_youtube_cookies(cookie_file_path: str, user_id: int | None = None) -> b
                     'skip_download': True,
                     'noplaylist': True,
                     'ignore_no_formats_error': True,
-                    'cookiefile': cookie_file_path,
+                    'cookiefile': usable_cookie_path(cookie_file_path),
                     'extractor_args': {
                         'youtube': {'player_client': ['tv']}
                     },
@@ -2957,8 +2965,14 @@ def try_download_with_cookie_fallback(user_id: int, url: str, download_func, *ar
     cookie_attempts = []
     
     # 1. Куки пользователя
-    if os.path.exists(user_cookie_path):
-        cookie_attempts.append(('user', user_cookie_path))
+    # v81: only a valid Netscape cookie file may be used - an empty one
+    # makes yt-dlp abort the download with a cryptic error
+    from HELPERS.cookie_helper import usable_cookie_path, describe_cookie_problem
+    usable_user_cookie = usable_cookie_path(user_cookie_path)
+    if usable_user_cookie:
+        cookie_attempts.append(('user', usable_user_cookie))
+    elif os.path.exists(user_cookie_path):
+        logger.warning(f"Skipping user cookie: {describe_cookie_problem(user_cookie_path)}")
     
     # 2. Куки сервиса из конфига
     if service_name:
@@ -2968,8 +2982,11 @@ def try_download_with_cookie_fallback(user_id: int, url: str, download_func, *ar
     
     # 3. Глобальные куки из COOKIE_FILE_PATH
     global_cookie_path = Config.COOKIE_FILE_PATH
-    if os.path.exists(global_cookie_path):
-        cookie_attempts.append(('global', global_cookie_path))
+    usable_global_cookie = usable_cookie_path(global_cookie_path)
+    if usable_global_cookie:
+        cookie_attempts.append(('global', usable_global_cookie))
+    elif os.path.exists(global_cookie_path):
+        logger.warning(f"Skipping global cookie: {describe_cookie_problem(global_cookie_path)}")
     
     # Пробуем каждую попытку с куки
     for attempt_type, cookie_source in cookie_attempts:
@@ -3217,11 +3234,21 @@ def try_non_youtube_cookie_fallback(user_id: int, url: str, download_func, *args
     _original_cookiefile = _opts.get('cookiefile') if _opts else None
 
     def _apply_cookie(path):
-        """Set the active cookiefile for the upcoming download_func call."""
+        """Set the active cookiefile for the upcoming download_func call.
+
+        v81: an empty/garbage cookie file makes yt-dlp abort the download
+        ("does not look like a Netscape format cookies file"), so it is
+        never handed over.
+        """
+        from HELPERS.cookie_helper import usable_cookie_path
+        usable = usable_cookie_path(path)
+        if not usable:
+            return False
         if _opts is not None:
-            _opts['cookiefile'] = path
+            _opts['cookiefile'] = usable
         # Thread-local for the audio path (and as a backup for video path)
-        threading.current_thread().cookiefile_override = path
+        threading.current_thread().cookiefile_override = usable
+        return True
 
     try:
         # 1. Пробуем куки пользователя
@@ -3231,11 +3258,13 @@ def try_non_youtube_cookie_fallback(user_id: int, url: str, download_func, *args
         if os.path.exists(user_cookie_path):
             logger.info(f"Trying user cookies for non-YouTube URL: {url}")
             try:
-                _apply_cookie(user_cookie_path)
-                result = download_func(*args)
-                if result is not None:
-                    finish_cookie_task(task_id, True, user_cookie_path)
-                    return result
+                if _apply_cookie(user_cookie_path):
+                    result = download_func(*args)
+                    if result is not None:
+                        finish_cookie_task(task_id, True, user_cookie_path)
+                        return result
+                else:
+                    logger.warning(f"Skipping user cookies: {describe_cookie_problem(user_cookie_path)}")
             except Exception as e:
                 logger.warning(f"User cookies failed for {url}: {e}")
 
@@ -3254,11 +3283,13 @@ def try_non_youtube_cookie_fallback(user_id: int, url: str, download_func, *args
                             f.write(content)
 
                         try:
-                            _apply_cookie(temp_cookie_path)
-                            result = download_func(*args)
-                            if result is not None:
-                                finish_cookie_task(task_id, True, temp_cookie_path)
-                                return result
+                            if _apply_cookie(temp_cookie_path):
+                                result = download_func(*args)
+                                if result is not None:
+                                    finish_cookie_task(task_id, True, temp_cookie_path)
+                                    return result
+                            else:
+                                logger.warning(f"Skipping service cookies: {describe_cookie_problem(temp_cookie_path)}")
                         except Exception as e:
                             logger.warning(f"Service cookies failed for {url}: {e}")
                         finally:
@@ -3273,11 +3304,13 @@ def try_non_youtube_cookie_fallback(user_id: int, url: str, download_func, *args
         if os.path.exists(global_cookie_path):
             logger.info(f"Trying global cookies for non-YouTube URL: {url}")
             try:
-                _apply_cookie(global_cookie_path)
-                result = download_func(*args)
-                if result is not None:
-                    finish_cookie_task(task_id, True, global_cookie_path)
-                    return result
+                if _apply_cookie(global_cookie_path):
+                    result = download_func(*args)
+                    if result is not None:
+                        finish_cookie_task(task_id, True, global_cookie_path)
+                        return result
+                else:
+                    logger.warning(f"Skipping global cookies: {describe_cookie_problem(global_cookie_path)}")
             except Exception as e:
                 logger.warning(f"Global cookies failed for {url}: {e}")
 

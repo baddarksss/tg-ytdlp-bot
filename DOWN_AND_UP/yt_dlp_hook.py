@@ -107,6 +107,18 @@ def get_video_formats(url, user_id=None, playlist_start_index=1, cookies_already
             url = _resolved
     except Exception as _fb_err:
         logger.debug(f"get_video_formats: Facebook share resolution skipped: {_fb_err}")
+
+    # 🔧 VPS patch: eporner.com — لینک‌های /hd-porn/ و /video-<hash>/ با yt-dlp
+    # ("Unable to extract hash") شکست می‌خورند؛ فرم /embed/<hash>/ پایدار است.
+    # اینجا همان الگوی resolve_facebook_share_url اعمال می‌شود.
+    try:
+        from URL_PARSERS.normalizer import normalize_eporner_url as _ep_norm
+        _ep_resolved = _ep_norm(url)
+        if _ep_resolved != url:
+            logger.info(f"get_video_formats: Eporner URL normalized '{url}' -> '{_ep_resolved}'")
+            url = _ep_resolved
+    except Exception as _ep_err:
+        logger.debug(f"get_video_formats: Eporner normalization skipped: {_ep_err}")
     
     # ВНИМАНИЕ ПО ПРОИЗВОДИТЕЛЬНОСТИ:
     # Раньше здесь безусловно сбрасывался кеш проверенных источников YouTube‑куки.

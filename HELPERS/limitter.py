@@ -1,5 +1,5 @@
 from HELPERS.app_instance import get_app
-from CONFIG.config import Config
+from CONFIG.config import Config, is_placeholder_chat_id
 from CONFIG.messages import Messages, safe_get_messages
 from CONFIG.logger_msg import LoggerMsg
 from HELPERS.logger import logger, get_log_channel
@@ -167,7 +167,13 @@ def is_user_in_channel(app, message):
         return False  # denial message already sent by is_user_allowed
     # Subscription is optional: skip the check when SUBSCRIBE_CHANNEL is not configured
     # (empty/0 = no channel gate; mirrors the ALLOWED_GROUP empty-list convention)
-    if not getattr(Config, 'SUBSCRIBE_CHANNEL', None):
+    # v81: the default config ships a SAMPLE channel id (-100222222222222222222).
+    # Checking membership against it made Telegram/SQLite throw
+    # ("Python int too large to convert to SQLite INTEGER") and the user was
+    # then treated as "not subscribed" and blocked. A placeholder means
+    # "no channel configured" -> no gate.
+    sub_channel = getattr(Config, 'SUBSCRIBE_CHANNEL', None)
+    if not sub_channel or is_placeholder_chat_id(sub_channel):
         return True
     try:
         logger.info(LoggerMsg.LIMITTER_CHANNEL_CHECK_MEMBERSHIP_LOG_MSG.format(

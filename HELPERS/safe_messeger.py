@@ -272,6 +272,17 @@ def read_flood_wait_remaining(chat_id):
 def safe_send_message(chat_id, text, **kwargs):
     _messages = safe_get_messages(None)
     user_id = chat_id
+    # v81: the default config ships SAMPLE channel ids (-100111111111111,
+    # -100222222222222222222). Telegram answers "Peer id invalid" for them
+    # and every attempt is retried 3 times - that filled the log with
+    # errors and slowed the bot down. A placeholder target is skipped.
+    try:
+        from CONFIG.config import is_placeholder_chat_id
+        if chat_id is not None and is_placeholder_chat_id(chat_id):
+            logger.info(f"[SAFE_SEND] skipped placeholder chat_id={chat_id}")
+            return False
+    except Exception:
+        pass
     # Normalize reply parameters and preserve topic/thread info
     original_message = kwargs.get('message')
     # Peek callback_query (will be popped later) to inherit thread context in topics

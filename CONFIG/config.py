@@ -218,6 +218,32 @@ def config_has_logs():
     return False
 
 
+# ── Chat-ID sanity ───────────────────────────────────────────────────────────
+# The default config ships with SAMPLE channel ids. Using them makes Telegram
+# reject every request ("Peer id invalid") and the local SQLite/Firebase cache
+# blow up ("Python int too large to convert to SQLite INTEGER") because
+# -100222222222222222222 does not fit into an int64 column.
+_PLACEHOLDER_CHAT_IDS = (
+    -100111111111111,
+    -1002222222222222,
+    -100222222222222222222,
+)
+
+
+def is_placeholder_chat_id(value) -> bool:
+    """True when *value* is one of the sample ids of the default config, or
+    an id that does not fit into int64 (both are unusable for Telegram)."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return True
+    if v in _PLACEHOLDER_CHAT_IDS:
+        return True
+    if not (-2**63 <= v < 2**63):
+        return True
+    return False
+
+
 def _print_banner():
     if os.environ.get("TG_YTDLP_NO_BANNER", "") not in ("", "0", "false", "off"):
         return
