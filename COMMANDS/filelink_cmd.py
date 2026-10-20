@@ -193,6 +193,16 @@ def filelink_media(app, message):
         uid = int(message.chat.id)
     except Exception:
         return
+    # v82: پیامِ فوروارد‌شده از یک کانال یعنی «این کانال را اضافه کن»،
+    # نه «این فایل را روی سرور من آپلود کن». این هندلر قبل از هندلرِ
+    # فورواردِ عمومی ثبت می‌شود، پس همین‌جا باید اول دیده شود.
+    if getattr(message, "forward_from_chat", None) is not None:
+        try:
+            from COMMANDS.channels_cmd import handle_channels_forwarded
+            if handle_channels_forwarded(app, message):
+                return
+        except Exception as e:
+            logger.warning(f"filelink: forwarded-channel routing failed: {e}")
     info = _media_of(message)
     if not info:
         return
