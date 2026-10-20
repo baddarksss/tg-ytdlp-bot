@@ -85,6 +85,14 @@ set_app(app)
 # منطبق می‌ایستد؛ پس ترتیبِ ایمپورت = ترتیبِ اولویت).
 from COMMANDS.filelink_cmd import *
 
+# v82: ماژولِ لینکِ مستقیم را زود ایمپورت می‌کنیم تا هندلرِ دکمه‌های
+# «دانلود کن / لغو» از همان ابتدا ثبت شود (ماژول به‌صورت تنبل هم ایمپورت
+# می‌شود، ولی آن‌وقت دکمه‌ها دیر ثبت می‌شوند).
+try:
+    import HELPERS.direct_link  # noqa: F401
+except Exception as e:  # pragma: no cover
+    print(f"⚠️  direct_link module failed to import: {e}")
+
 # v82: the file-link web server must be up BEFORE the first file arrives,
 # otherwise the first link the user gets points to a dead port (and on a VPS
 # the port is published to the host, so it has to be listening already).

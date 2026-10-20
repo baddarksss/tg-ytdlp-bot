@@ -22,6 +22,7 @@ import hashlib
 import html
 import os
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -437,6 +438,37 @@ def _ffprobe_media(path: str):
     return 0, 0, 0.0
 
 
+def _make_thumb(path: str, at_seconds: float = 1.0):
+    """یک فریم از ویدیو به‌عنوان تامبنیل (برای پیش‌نمایشِ درست در چت).
+
+    بدون تامبنیل، تلگرام ویدیو را به‌صورت یک کادرِ کوچکِ بی‌تصویر نشان می‌دهد.
+    ffmpeg از خودِ فایل یک فریم می‌گیرد ⇒ برای هر ویدیویی کار می‌کند.
+    محدودیتِ تلگرام: JPEG و زیرِ ۲۰۰ کیلوبایت و عرض/ارتفاع زیرِ ۳۲۰.
+    """
+    try:
+        if not path or not os.path.exists(path):
+            return None
+        out = path + ".thumb.jpg"
+        r = subprocess.run([
+            "ffmpeg", "-y", "-ss", "%.2f" % max(0.1, at_seconds), "-i", path,
+            "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "3", out
+        ], capture_output=True, timeout=90)
+        if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
+            return None
+        if os.path.getsize(out) > 190_000:
+            # زیرِ سقفِ تلگرام: دوباره با کیفیت/اندازهٔ کمتر
+            subprocess.run([
+                "ffmpeg", "-y", "-i", out, "-vf", "scale=240:-2", "-q:v", "6", out + ".s.jpg"
+            ], capture_output=True, timeout=90)
+            small = out + ".s.jpg"
+            if os.path.exists(small) and os.path.getsize(small) > 0:
+                os.replace(small, out)
+        return out
+    except Exception as e:
+        logger.debug(f"[DIRECT] thumbnail extraction failed for {path}: {e}")
+    return None
+
+
 def _progress_text(name: str, done: int, total: int, started: float, note: str = "") -> str:
     elapsed = max(0.001, time.time() - started)
     speed = done / elapsed
@@ -832,9 +864,21 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                 kwargs["width"] = int(v_w)
             if v_h:
                 kwargs["height"] = int(v_h)
-            return app.send_video(user_id, upload_path, caption=caption, file_name=upload_name,
-                                  supports_streaming=True, progress=progress_bar,
-                                  progress_args=progress_args, **kwargs)
+            # v82: a thumbnail makes the preview in the chat look right -
+            # without it Telegram shows a tiny empty box.
+            thumb = _make_thumb(upload_path, max(0.5, (v_dur or 2) * 0.1))
+            if thumb:
+                kwargs["thumb"] = thumb
+            try:
+                return app.send_video(user_id, upload_path, caption=caption, file_name=upload_name,
+                                      supports_streaming=True, progress=progress_bar,
+                                      progress_args=progress_args, **kwargs)
+            finally:
+                if thumb:
+                    try:
+                        os.remove(thumb)
+                    except Exception:
+                        pass
 
         def _send_audio():
             # v82: same as the video - Telegram shows "00:00" for an audio
@@ -906,17 +950,129 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
 
 
 def maybe_handle_direct_link(app, message, url: str, user_id: int) -> bool:
-    """اگر لینک مستقیم باشد، دانلود را شروع می‌کند و True برمی‌گرداند."""
+    """اگر لینک مستقیم باشد، اول «تأیید» می‌گیرد و True برمی‌گرداند.
+
+    v82: کاربر خواسته قبل از شروعِ دانلود از او تأیید گرفته شود (قبلاً
+    ربات بی‌سروصدا شروع می‌کرد). پس: یک پیامِ «می‌خواهی دانلود شود؟» با
+    دکمه‌های ✅/❌ می‌فرستیم و فقط با «✅» دانلود شروع می‌شود.
+    """
     try:
         ok, reason = is_direct_link(url)
         if not ok:
             # سطحِ info (نه debug) تا در لاگِ Railway دیده شود؛ وگرنه بی‌صدا رد می‌شود
             logger.info(f"[DIRECT] not a direct link ({reason}): {url[:120]}")
             return False
-        logger.info(f"[DIRECT] handling direct link ({reason}) for {user_id}: {url[:100]}")
-        threading.Thread(target=download_direct, args=(app, message, url, user_id, reason),
-                         name=f"direct-dl-{user_id}", daemon=True).start()
+        logger.info(f"[DIRECT] direct link found ({reason}) for {user_id}: {url[:100]}")
+        ask_direct_confirmation(app, message, url, user_id, reason)
         return True
     except Exception as exc:
         logger.error(f"[DIRECT] dispatch failed: {exc}")
         return False
+
+
+# ── تأییدِ قبل از دانلود ───────────────────────────────────────────────────
+_PENDING_DIRECT = {}
+_PENDING_LOCK = threading.Lock()
+
+
+def ask_direct_confirmation(app, message, url: str, user_id: int, reason: str = ""):
+    """پیامِ «می‌خواهی دانلود شود؟» + دکمه‌های تأیید/لغو."""
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from HELPERS.safe_messeger import safe_send_message
+
+    name, size = "", 0
+    try:
+        info = probe(url, timeout=8)
+        name = _name_from_headers(info.get("headers") or {}, url)
+        size = int(info.get("length") or 0)
+    except Exception:
+        pass
+    if not name:
+        name = os.path.basename(urllib.parse.urlparse(url).path) or "file"
+
+    with _PENDING_LOCK:
+        _PENDING_DIRECT[int(user_id)] = {
+            "url": url, "name": name, "size": size, "reason": reason,
+        }
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ دانلود کن", callback_data=f"dlask|go|{user_id}"),
+         InlineKeyboardButton("❌ لغو", callback_data=f"dlask|no|{user_id}")],
+    ])
+    lines = ["🔎 <b>لینکِ مستقیم پیدا شد</b>", "",
+             f"📄 <b>{html.escape(name)}</b>"]
+    if size:
+        lines.append(f"📦 {hsize(size)}")
+    lines += ["", "دانلودش شروع شود؟"]
+    try:
+        safe_send_message(user_id, "\n".join(lines), reply_markup=kb, message=message,
+                           parse_mode="html")
+    except Exception as e:
+        logger.warning(f"[DIRECT] confirmation message failed: {e}")
+    return True
+
+
+def _direct_confirm_callback(app, cq):
+    """هندلرِ دکمه‌های تأیید/لغو."""
+    try:
+        data = (cq.data or "").split("|")
+        action = data[1] if len(data) > 1 else ""
+        uid = int(data[2]) if len(data) > 2 else int(cq.from_user.id)
+        if int(cq.from_user.id) != uid:
+            cq.answer("این دکمه برای شما نیست", show_alert=True)
+            return True
+        with _PENDING_LOCK:
+            pending = _PENDING_DIRECT.pop(uid, None)
+        if not pending:
+            cq.answer("این درخواست منقضی شده", show_alert=True)
+            return True
+        if action == "no":
+            try:
+                cq.edit_message_text("❌ لغو شد.")
+            except Exception:
+                pass
+            cq.answer("لغو شد")
+            return True
+        # شروعِ دانلود
+        try:
+            cq.edit_message_text("⏳ باشه، دانلود شروع شد…")
+        except Exception:
+            pass
+        cq.answer("شروع شد ✅")
+        threading.Thread(target=download_direct,
+                         args=(app, cq.message, pending["url"], uid, pending.get("reason") or ""),
+                         name=f"direct-dl-{uid}", daemon=True).start()
+        return True
+    except Exception as exc:
+        logger.error(f"[DIRECT] confirm callback failed: {exc}")
+        return True
+
+
+def _register_confirm_handler() -> bool:
+    """ثبتِ هندلرِ دکمه‌های تأیید (مثلِ download_controls: مستقیم روی app
+    اگر آماده باشد، وگرنه از رجیستریِ هندلرها)."""
+    try:
+        from pyrogram import filters
+    except Exception:
+        return False
+    try:
+        from HELPERS.app_instance import get_app
+        app = get_app()
+        if app is not None:
+            app.on_callback_query(filters.regex(r"^dlask\|"))(_direct_confirm_callback)
+            logger.info("[DIRECT] confirmation callback registered")
+            return True
+    except Exception as exc:
+        logger.warning(f"[DIRECT] direct registration failed: {exc}")
+    try:
+        from HELPERS.handler_registry import on_callback_query as _reg
+        _reg(filters.regex(r"^dlask\|"))(_direct_confirm_callback)
+        logger.info("[DIRECT] confirmation callback registered via handler registry")
+        return True
+    except Exception as exc:
+        logger.warning(f"[DIRECT] deferred registration failed: {exc}")
+    return False
+
+
+_register_confirm_handler()
+
