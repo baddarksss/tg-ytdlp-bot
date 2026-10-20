@@ -85,6 +85,18 @@ set_app(app)
 # منطبق می‌ایستد؛ پس ترتیبِ ایمپورت = ترتیبِ اولویت).
 from COMMANDS.filelink_cmd import *
 
+# v82: the file-link web server must be up BEFORE the first file arrives,
+# otherwise the first link the user gets points to a dead port (and on a VPS
+# the port is published to the host, so it has to be listening already).
+try:
+    from HELPERS.filelink import start_server as _start_filelink_server, base_url as _fl_base_url
+    if _fl_base_url():
+        _start_filelink_server()
+    else:
+        print("⚠️  filelink: no public base URL (LINK_BASE_URL) - file links stay disabled")
+except Exception as e:  # pragma: no cover
+    print(f"⚠️  filelink server failed to start: {e}")
+
 # دکمه‌های کنترلِ دانلود (❌ لغو / 🔄 ادامه): هندلرِ callback بعد از ساختِ app ثبت می‌شود
 from HELPERS.download_controls import *  # noqa: F401,F403
 

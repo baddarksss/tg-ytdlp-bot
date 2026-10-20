@@ -15,7 +15,7 @@ import re
 import threading
 import time
 
-from CONFIG.config import Config
+from CONFIG.config import Config, vars_location_hint
 from HELPERS.logger import logger
 
 # ⚠️ f48: Cloudflare جلوی User-Agent پیش‌فرضِ python-urllib را می‌گیرد
@@ -322,10 +322,10 @@ def panel(app, copied=None) -> tuple:
         rows.append(row)
     lines.append("")
     lines.append("ℹ️ کانال‌هایی که با 🔒 مشخص‌اند از متغیرِ محیطی <code>COPY_CHANNEL_ID</code> "
-                 "می‌آیند و فقط از Railway → Variables قابلِ حذف‌اند.")
+                 "می‌آیند و فقط از %s قابلِ حذف‌اند." % vars_location_hint())
     lines.append("")
     lines.append("💾 <b>بکاپِ کانال‌ها</b> = خطِ آمادهٔ <code>COPY_CHANNEL_ID</code> برای کپی در "
-                 "Railway → Variables (تا در ریلویِ بعدی دستی اضافه نکنی).")
+                 "%s (تا در ریلودِ بعدی دستی اضافه نکنی)." % vars_location_hint())
     lines.append("🧩 <b>متغیرها</b> = فهرست/بکاپِ <u>کلِ</u> متغیرهای ربات + ویرایش و حذف "
                  "از همین‌جا.")
     lines.append("👤 <b>ادمین‌ها</b> = هر کسی که اینجا باشد، دکمه‌های مدیریتی را می‌بیند "
@@ -370,8 +370,8 @@ def backup_text() -> str:
     if not keys:
         lines.append("الان هیچ کانالی نداری.")
         return "\n".join(lines)
-    lines.append("این خط را کپی کن و در <b>Railway → Variables</b> بگذار "
-                 "(اسمش <code>COPY_CHANNEL_ID</code>):")
+    lines.append("این خط را کپی کن و در <b>%s</b> بگذار "
+                 "(اسمش <code>COPY_CHANNEL_ID</code>):" % vars_location_hint())
     lines.append("")
     lines.append("<code>%s=%s</code>" % ("COPY_CHANNEL_ID", backup_value()))
     lines.append("")

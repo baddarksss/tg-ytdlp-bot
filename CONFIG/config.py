@@ -252,6 +252,20 @@ def is_placeholder_chat_id(value) -> bool:
     return False
 
 
+def vars_location_hint() -> str:
+    """Where the environment variables of the bot live.
+
+    Railway keeps them in "Railway → Variables", a VPS/Docker deployment in
+    the .env file next to the project. The user messages must say the right
+    thing for the deployment the bot actually runs on.
+    """
+    if (os.environ.get("RAILWAY_ENVIRONMENT_ID")
+            or os.environ.get("RAILWAY_SERVICE_ID")
+            or os.environ.get("RAILWAY_PUBLIC_DOMAIN")):
+        return "Railway → Variables"
+    return "فایل <code>.env</code> ربات"
+
+
 def _print_banner():
     if os.environ.get("TG_YTDLP_NO_BANNER", "") not in ("", "0", "false", "off"):
         return

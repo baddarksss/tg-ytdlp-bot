@@ -19,7 +19,7 @@ import json
 import os
 import urllib.request
 
-from CONFIG.config import Config
+from CONFIG.config import Config, vars_location_hint
 from HELPERS.logger import logger
 
 RAILWAY_GQL = "https://backboard.railway.com/graphql/v2"
@@ -68,6 +68,65 @@ def token() -> str:
     return (str(getattr(Config, "RAILWAY_API_TOKEN", "") or "")
             or os.environ.get("RAILWAY_API_TOKEN", "")
             or os.environ.get("RAILWAY_TOKEN", "")).strip()
+
+
+# ────────── حالت VPS (بدون ریلوی): ذخیره در فایلِ .env ──────────
+# در docker-compose (VPS) همان پوشه‌ی ریپو به /app مَونت می‌شود ⇒ /app/.env
+# فایلِ اصلیِ متغیرهاست؛ نوشتنِ آن روی دیسکِ سرور ماندگار است.
+APP_ENV_FILE = "/app/.env"
+
+
+def _vps_env_upsert(name: str, value: str) -> bool:
+    """مقدار متغیر را در فایلِ .env ذخیره/بروزرسانی می‌کند (اتمیک)."""
+    if not os.path.isfile(APP_ENV_FILE):
+        return False
+    try:
+        with open(APP_ENV_FILE, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        hit = False
+        out = []
+        for ln in lines:
+            if ln.split("=", 1)[0].strip() == name:
+                out.append(f"{name}={value}")
+                hit = True
+            else:
+                out.append(ln)
+        if not hit:
+            out.append(f"{name}={value}")
+        tmp = APP_ENV_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+        st = os.stat(APP_ENV_FILE)
+        os.chmod(tmp, st.st_mode)
+        os.replace(tmp, APP_ENV_FILE)
+        logger.info(f"vars_store: VPS env upsert {name} ({len(value)} chars)")
+        return True
+    except Exception as e:
+        logger.error(f"vars_store: vps env upsert failed: {e}")
+        return False
+
+
+def _vps_env_delete(name: str) -> bool:
+    """خطِ متغیر را از فایلِ .env حذف می‌کند (اتمیک)."""
+    if not os.path.isfile(APP_ENV_FILE):
+        return False
+    try:
+        with open(APP_ENV_FILE, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        out = [ln for ln in lines if ln.split("=", 1)[0].strip() != name]
+        if len(out) == len(lines):
+            return False
+        tmp = APP_ENV_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+        st = os.stat(APP_ENV_FILE)
+        os.chmod(tmp, st.st_mode)
+        os.replace(tmp, APP_ENV_FILE)
+        logger.info(f"vars_store: VPS env delete {name}")
+        return True
+    except Exception as e:
+        logger.error(f"vars_store: vps env delete failed: {e}")
+        return False
 
 
 def _gql(query: str, variables: dict = None) -> tuple:
@@ -229,6 +288,10 @@ def backup_file_text(vars_: dict, source: str) -> str:
 def set_variable(name: str, value: str) -> tuple:
     pid, eid, sid = railway_ids()
     if not (pid and eid and sid):
+        # حالت VPS: بدونِ ریلوی، در فایلِ .env ذخیره می‌شود
+        if _vps_env_upsert(name, value):
+            return True, ("ذخیره شد ✅ (روی VPS: فایلِ .env — مقدارِ حاضرِ همین لحظه\
+در حافظه اعمال شد؛ برای بقیهٔ سرویس‌ها ری‌استارت لازم است)")
         return False, "آیدی پروژه/محیط/سرویسِ Railway پیدا نشد"
     q = ("mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}")
     data, err = _gql(q, {"i": {"projectId": pid, "environmentId": eid, "serviceId": sid,
@@ -244,6 +307,9 @@ def set_variable(name: str, value: str) -> tuple:
 def delete_variable(name: str) -> tuple:
     pid, eid, sid = railway_ids()
     if not (pid and eid and sid):
+        # حالت VPS: حذفِ خط از فایلِ .env
+        if _vps_env_delete(name):
+            return True, "حذف شد ✅ (روی VPS: فایلِ .env — برای اعمالِ کامل، ربات را ری‌استارت کن)"
         return False, "آیدی پروژه/محیط/سرویسِ Railway پیدا نشد"
     q = ("mutation($i:VariableDeleteInput!){variableDelete(input:$i)}")
     data, err = _gql(q, {"i": {"projectId": pid, "environmentId": eid, "serviceId": sid,
@@ -468,7 +534,7 @@ def essential(app=None) -> tuple:
     env_file = "\n".join(lines) + "\n"
 
     msg = ["📌 <b>بکاپِ ضروری</b>",
-           "این خط‌ها را در Railway → Variables → <b>RAW Editor</b> پیست کن و دیپلوی بزن:",
+           "این خط‌ها را در %s → <b>RAW Editor</b> پیست کن و دیپلوی بزن:" % vars_location_hint(),
            "",
            "<pre>"]
     for name in ESSENTIAL:

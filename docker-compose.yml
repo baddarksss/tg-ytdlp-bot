@@ -95,6 +95,11 @@ services:
     restart: unless-stopped
     logging: *default-logging
     privileged: true
+    # v82: the bot's filelink/direct-link web server listens on 8080 inside
+    # the shared network namespace -> publish it on the host so nginx can
+    # serve the public file links.
+    ports:
+      - "127.0.0.1:8080:8080"
     dns:
       - 1.1.1.1
       - 1.0.0.1

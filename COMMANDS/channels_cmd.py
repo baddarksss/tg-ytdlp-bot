@@ -11,7 +11,7 @@ import contextlib
 from pyrogram import filters
 from pyrogram.types import ForceReply, ReplyParameters
 
-from CONFIG.config import Config
+from CONFIG.config import Config, vars_location_hint
 from HELPERS.app_instance import get_app
 from HELPERS.logger import logger, send_to_logger
 from HELPERS.safe_messeger import (safe_send_message, safe_edit_message_text,
@@ -227,8 +227,8 @@ def chcloudsync_callback(app, cq):
 
 @app.on_callback_query(filters.regex(r"^chlock$"))
 def chlock_callback(app, cq):
-    cq.answer("این کانال از متغیرِ COPY_CHANNEL_ID می‌آید — از Railway → Variables حذفش کن",
-              show_alert=True)
+    cq.answer("این کانال از متغیرِ COPY_CHANNEL_ID می‌آید — از %s حذفش کن"
+              % vars_location_hint(), show_alert=True)
     return True
 
 

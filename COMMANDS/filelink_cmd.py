@@ -115,14 +115,23 @@ def _link_text(rec: dict) -> str:
     return "\n".join(lines)
 
 
+def _no_domain_hint() -> str:
+    """راهنمای «دامنه نداری» — متناسب با استقرار (Railway یا VPS)."""
+    if os.environ.get("RAILWAY_ENVIRONMENT_ID") or os.environ.get("RAILWAY_SERVICE_ID"):
+        return ("Railway → سرویس → <b>Settings → Networking → Generate Domain</b> "
+                "(پورت را ۸۰۸۰ بگذار) و بعد دکمهٔ «🔄» را بزن.")
+    return ("روی VPS: در فایل <code>.env</code> ربات مقدار "
+            "<code>LINK_BASE_URL=https://your-domain/path</code> را ست کن "
+            "(و پورت ۸۰۸۰ را به بیرون وصل کن) و بعد دکمهٔ «🔄» را بزن.")
+
+
 def _panel() -> tuple:
     recs = fl.active()
     base = fl.base_url()
     lines = ["🔗 <b>لینک‌های فایل</b>", ""]
     if not base:
         lines += ["⚠️ <b>دامنهٔ عمومی نداری</b> — تا دامنه نسازی لینک کار نمی‌کند.",
-                  "Railway → سرویس → <b>Settings → Networking → Generate Domain</b> "
-                  "(پورت را ۸۰۸۰ بگذار) و بعد دکمهٔ «🔄» را بزن.", ""]
+                  _no_domain_hint(), ""]
     elif not app:
         pass
     if not recs:
@@ -236,8 +245,7 @@ def flmk_callback(app, cq):
     fl.start_server()
     base = fl.base_url()
     if not base:
-        safe_send_message(uid, "⚠️ اول باید دامنهٔ عمومی بسازی: Railway → Settings → Networking → "
-                               "Generate Domain (پورت ۸۰۸۰) و بعد «🔄» را بزن.")
+        safe_send_message(uid, "⚠️ اول باید دامنهٔ عمومی تنظیم شود.\n\n" + _no_domain_hint())
         return True
     try:
         msg = run_pyrogram_client_coroutine(app, app.get_messages(chat_id, msg_id), timeout=60)

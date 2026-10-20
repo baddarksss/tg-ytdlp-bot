@@ -422,7 +422,15 @@ def _build_app():
     app.router.add_head("/d/{token}", head_download)
     app.router.add_head("/d/{token}/{name}", head_download)
     app.router.add_get("/", root)
-    app.on_startup.append(lambda a: asyncio.ensure_future(sweeper()))
+
+    # v82: the startup hook must NOT return the sweeper task - aiohttp
+    # awaits whatever a startup signal returns, and the sweeper loops
+    # forever => app.startup() never finished and the server never came up.
+    # Fire-and-forget instead (the thread based sweeper does the same job).
+    async def _start_sweeper(_app):
+        asyncio.ensure_future(sweeper())
+
+    app.on_startup.append(_start_sweeper)
     return app
 
 
@@ -444,8 +452,19 @@ def start_server() -> bool:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            web.run_app(_build_app(), host="0.0.0.0", port=port, loop=loop,
-                        print=None, access_log=None)
+            # v82: web.run_app() does NOT work in a thread - it installs a
+            # signal handler and calls set_wakeup_fd(), which is only allowed
+            # in the main thread ("set_wakeup_fd only works in main thread of
+            # the main interpreter"). The server therefore never started and
+            # every file link was dead. AppRunner + TCPSite has no such
+            # requirement and works fine in a background thread.
+            _app = _build_app()
+            runner = web.AppRunner(_app, access_log=None)
+            loop.run_until_complete(runner.setup())
+            site = web.TCPSite(runner, host="0.0.0.0", port=port)
+            loop.run_until_complete(site.start())
+            logger.info(f"filelink: server listening on 0.0.0.0:{port}")
+            loop.run_forever()
         except OSError as e:
             logger.info(f"filelink: پورت {port} در اختیارِ سرورِ سلامت است ({e}) — "
                         f"همان روت‌ها را سرو می‌کند.")
