@@ -413,6 +413,30 @@ class _TooBig(Exception):
     pass
 
 
+def _ffprobe_media(path: str):
+    """(width, height, duration) از ffprobe — بدونِ وابستگی به ماژول‌های سنگین."""
+    import json as _json
+    import subprocess as _sp
+    try:
+        r = _sp.run([
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-show_entries", "format=duration",
+            "-of", "json", path
+        ], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        if r.returncode == 0:
+            data = _json.loads(r.stdout or "{}")
+            streams = data.get("streams") or []
+            width = int(streams[0].get("width") or 0) if streams else 0
+            height = int(streams[0].get("height") or 0) if streams else 0
+            duration = float((data.get("format") or {}).get("duration") or 0)
+            return width, height, duration
+    except Exception as e:
+        logger.debug(f"[DIRECT] ffprobe failed for {path}: {e}")
+    return 0, 0, 0.0
+
+
 def _progress_text(name: str, done: int, total: int, started: float, note: str = "") -> str:
     elapsed = max(0.001, time.time() - started)
     speed = done / elapsed
@@ -792,13 +816,39 @@ def download_direct(app, message, url: str, user_id: int, kind_hint: str = "") -
                          if msg_id else ())
 
         def _send_video():
+            # v82: without duration/width/height Telegram shows the clip as
+            # "00:00" and the player has no size. ffprobe gives us the real
+            # values (the same helper the normal download path uses).
+            v_w = v_h = 0
+            v_dur = 0.0
+            try:
+                v_w, v_h, v_dur = _ffprobe_media(upload_path)
+            except Exception as _probe_err:
+                logger.debug(f"[DIRECT] ffprobe failed for {upload_name}: {_probe_err}")
+            kwargs = {}
+            if v_dur:
+                kwargs["duration"] = int(v_dur)
+            if v_w:
+                kwargs["width"] = int(v_w)
+            if v_h:
+                kwargs["height"] = int(v_h)
             return app.send_video(user_id, upload_path, caption=caption, file_name=upload_name,
                                   supports_streaming=True, progress=progress_bar,
-                                  progress_args=progress_args)
+                                  progress_args=progress_args, **kwargs)
 
         def _send_audio():
+            # v82: same as the video - Telegram shows "00:00" for an audio
+            # without a duration
+            a_dur = 0.0
+            try:
+                _, _, a_dur = _ffprobe_media(upload_path)
+            except Exception as _probe_err:
+                logger.debug(f"[DIRECT] ffprobe failed for {upload_name}: {_probe_err}")
+            kwargs = {}
+            if a_dur:
+                kwargs["duration"] = int(a_dur)
             return app.send_audio(user_id, upload_path, caption=caption, file_name=upload_name,
-                                  progress=progress_bar, progress_args=progress_args)
+                                  progress=progress_bar, progress_args=progress_args, **kwargs)
 
         def _send_doc():
             # v82: this pyrogram build made `force_document` mutually exclusive
