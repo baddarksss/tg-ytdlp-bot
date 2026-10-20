@@ -26,6 +26,8 @@ _PENDING_ADD: dict = {}
 _COPIED: dict = {}
 ASK_TEXT = ("📢 آیدیِ کانال را بفرست (مثال: <code>-1001234567890</code> یا "
             "<code>@mychannel</code>).\n"
+            "یا ساده‌تر: <b>یک پیام از آن کانال را همین‌جا فوروارد کن</b> — "
+            "آیدی‌اش را خودم درمی‌آورم.\n"
             "روی <b>همین پیام ریپلای</b> کن و بفرست؛ من خودم چک می‌کنم که در آن "
             "کانال ادمین باشم. اگر لینکِ <code>t.me</code> هم بدهی قبول می‌کنم.")
 
@@ -93,6 +95,54 @@ def show_panel(user_id: int, answer_msg_id: int = 0):
 
 # ─────────────────────────── دستورها ───────────────────────────
 
+def handle_channels_forwarded(app, message) -> bool:
+    """اگر کاربر پیامی از یک کانال فوروارد کرد، آیدیِ کانال را از خودِ پیام می‌گیریم.
+
+    v82: قبلاً مجبور بود آیدیِ کانال را دستی پیدا کند و بفرستد
+    (یا بداند و بفرستد -1001234567890). حالا کافی است یک پیام از آن کانال
+    را داخلِ ربات فوروارد کند؛ ما از ``forward_from_chat`` آیدی و اسم را
+    برمی‌داریم و همان بررسیِ «ربات ادمین باشد» انجام می‌شود.
+    """
+    try:
+        uid = int(message.chat.id)
+    except Exception:
+        return False
+    if not _is_admin(uid):
+        return False
+    fwd_chat = getattr(message, "forward_from_chat", None)
+    if fwd_chat is None:
+        # شاید از یک کاربر فوروارد شده باشد (نه کانال)
+        fwd_user = getattr(message, "forward_from", None)
+        if fwd_user is not None:
+            safe_send_message(uid, "⚠️ این پیام از یک <b>کاربر</b> فوروارد شده، نه از کانال.\n"
+                                  "لطفاً یک پیام از خودِ کانال فوروارد کن.")
+            return True
+        # مبدأ پیام پنهان شده (forward protection) ⇒ آیدی در دسترس نیست
+        safe_send_message(uid, "⚠️ مبدأِ این پیام پنهان شده و آیدیِ کانال معلوم نیست.\n"
+                              "یا یک پیام دیگر از آن کانال فوروارد کن، یا آیدی را دستی بفرست.")
+        return True
+    try:
+        cid = int(fwd_chat.id)
+    except Exception:
+        return False
+    title = getattr(fwd_chat, "title", "") or ""
+
+    # اگر پیامِ فوروارد‌شده لینک دارد و کاربر در حالتِ «اضافه‌کردنِ کانال»
+    # نیست ⇒ بگذاریم مسیرِ معمولِ دانلود آن را برود
+    pending = uid in _PENDING_ADD
+    text = (getattr(message, "text", None) or "")
+    if not pending and ("http://" in text or "https://" in text):
+        return False
+
+    _PENDING_ADD.pop(uid, None)
+    logger.info(f"channels: forwarded channel detected for {uid}: {cid} ({title})")
+    safe_send_message(uid, "🔎 کانال از روی پیامِ فوروارد‌شده شناخته شد:\n"
+                          "<b>%s</b>\n<code>%s</code>\n\nدر حال بررسیِ ادمین‌بودن…"
+                          % (title or "کانال", cid))
+    _register_channel(app, uid, str(cid), getattr(message, "id", 0))
+    return True
+
+
 def handle_channels_text(app, message) -> bool:
     """نقطهٔ ورودِ متن‌ها — از داخل url_distractor صدا زده می‌شود.
 
@@ -107,6 +157,11 @@ def handle_channels_text(app, message) -> bool:
         uid = int(message.chat.id)
     except Exception:
         return False
+    # v82: پیامِ فوروارد‌شده از یک کانال ⇒ همان آیدیِ کانال (چه متن داشته باشد
+    # چه نباشد). قبل از چکِ متن، چون پیامِ فوروارد‌شدهٔ عکس/ویدیو متن ندارد.
+    if _is_admin(uid) and getattr(message, "forward_from_chat", None) is not None:
+        if handle_channels_forwarded(app, message):
+            return True
     text = (getattr(message, "text", None) or "").strip()
     if not text:
         return False

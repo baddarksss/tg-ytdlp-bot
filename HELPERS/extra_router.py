@@ -21,6 +21,22 @@ from __future__ import annotations
 from HELPERS.logger import logger
 
 
+def route_forwarded(app, message) -> bool:
+    """پیامِ فوروارد‌شده (بدونِ متن) ⇒ کانال.
+
+    چرا مسیرِ جدا: هندلرِ اصلی ``filters.text & filters.private`` است و یک
+    پیامِ فوروارد‌شده‌ی عکس/ویدیو متن ندارد ⇒ اصلاً به آن نمی‌رسد. پس این
+    مسیر را جداگانه وصل می‌کنیم.
+    """
+    try:
+        from COMMANDS.channels_cmd import handle_channels_forwarded
+        if handle_channels_forwarded(app, message):
+            return True
+    except Exception as e:
+        logger.error(f"extra_router: forwarded routing failed: {e}")
+    return False
+
+
 def route_extra_text(app, message) -> bool:
     """True یعنی این پیام یکی از دستورها/دکمه‌های ما بود و کارش انجام شد."""
     text = (getattr(message, "text", None) or "").strip()

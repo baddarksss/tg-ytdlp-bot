@@ -1668,6 +1668,22 @@ def keyboard_callback_handler_wrapper(app, callback_query):
     """Handle keyboard setting callbacks"""
     keyboard_callback_handler(app, callback_query)
 
+
+@app.on_message(filters.forwarded & filters.private)
+def forwarded_message_router(app, message):
+    """v82: پیامِ فوروارد‌شدهٔ بدونِ متن (عکس/ویدیو/…) به هندلرِ متنی نمی‌رسد.
+
+    این هندلر **بعد** از هندلرِ متنی ثبت شده تا پیام‌های فوروارد‌شده‌ای که
+    متن دارند اول از مسیرِ معمولِ لینک رد شوند (و فقط وقتی حالتِ «اضافه‌کردنِ
+    کانال» فعال است، به‌عنوان کانال تفسیر شوند).
+    """
+    try:
+        from HELPERS.extra_router import route_forwarded
+        if route_forwarded(app, message):
+            return
+    except Exception as e:
+        logger.error(f"forwarded_message_router failed: {e}")
+
 # The function is_playlist_with_range is now imported from URL_PARSERS.playlist_utils
 
 # Callback handler for add_bot_to_group close button
