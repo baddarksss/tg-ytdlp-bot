@@ -28,6 +28,11 @@ import time
 import urllib.parse
 from typing import Any, Dict, Tuple
 
+# v82: parse_mode must be the pyrogram ENUM ("html" as a plain string is
+# rejected: "Invalid parse mode"). Imported at module level on purpose - a
+# function-local import leaves the name undefined everywhere else.
+from pyrogram import enums
+
 from HELPERS.logger import logger
 
 # ── پسوندها ────────────────────────────────────────────────────────────────
